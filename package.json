@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start":"serve -s dist"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",
