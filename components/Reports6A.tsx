@@ -2,11 +2,12 @@
 import React, { useEffect, useState } from 'react';
 import { DataService, AuthService } from '../services/mockDataService';
 import { DynamicRecord, UserRole, User } from '../types';
-import { LayoutDashboard, Loader2, RefreshCw, User as UserIcon, CheckCircle, Upload, Edit, PlusCircle, Activity, Eraser, AlertTriangle, X, Calendar, Search, Filter, FileText, FileSpreadsheet, ChevronLeft, ChevronRight, Clock, Shield, MonitorPlay, Database } from 'lucide-react';
+import { LayoutDashboard, Loader2, RefreshCw, User as UserIcon, CheckCircle, Upload, Edit, PlusCircle, Activity, Eraser, AlertTriangle, X, Calendar, Search, Filter, FileText, FileSpreadsheet, ChevronLeft, ChevronRight, Clock, Shield, MonitorPlay, Database, PieChart } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { ExtentReport } from './ExtentReport';
 
 interface TeamStats {
     userId: string;
@@ -32,6 +33,7 @@ interface AuditLog {
 }
 
 export const Reports6A: React.FC = () => {
+  const [activeTab, setActiveTab] = useState<'activity' | 'extent'>('activity');
   const [stats, setStats] = useState<TeamStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastRefreshed, setLastRefreshed] = useState<string>('');
@@ -347,15 +349,31 @@ export const Reports6A: React.FC = () => {
                        <LayoutDashboard className="mr-3 text-blue-600" size={28} />
                        8-Teams Work Monitor
                    </h2>
-                   {!loading && (
+                   {!loading && activeTab === 'activity' && (
                         <div className="bg-indigo-50 text-indigo-700 px-4 py-1.5 rounded-full text-sm font-bold border border-indigo-100 flex items-center shadow-sm animate-in fade-in zoom-in">
                            <Database size={16} className="mr-2 text-indigo-500" />
                            Total 6A Records: <span className="ml-1 text-lg font-extrabold">{total6ACount}</span>
                         </div>
                    )}
                </div>
-               <p className="text-gray-500 text-sm mt-1">Real-time activity tracking for field teams. Click on a team card for details.</p>
+               {/* TAB NAVIGATION */}
+               <div className="flex gap-4 mt-4">
+                   <button 
+                       onClick={() => setActiveTab('activity')}
+                       className={`flex items-center px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${activeTab === 'activity' ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-100'}`}
+                   >
+                       <Activity size={16} className="mr-2" /> Day Activity
+                   </button>
+                   <button 
+                       onClick={() => setActiveTab('extent')}
+                       className={`flex items-center px-3 py-1.5 rounded-lg text-sm font-bold transition-all ${activeTab === 'extent' ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-100'}`}
+                   >
+                       <PieChart size={16} className="mr-2" /> Extent Report
+                   </button>
+               </div>
            </div>
+           
+           {activeTab === 'activity' && (
            <div className="flex items-center gap-4">
                {isAdmin && (
                    <button 
@@ -374,121 +392,128 @@ export const Reports6A: React.FC = () => {
                    <RefreshCw size={18} className={`mr-2 ${loading ? 'animate-spin' : ''}`}/> Refresh
                </button>
            </div>
+           )}
        </div>
        
        {/* Content */}
        <div className="flex-1 bg-gray-50 p-6 overflow-y-auto">
-           {loading ? (
-                <div className="h-full flex flex-col items-center justify-center text-gray-400">
-                    <Loader2 size={64} className="animate-spin mb-4 text-blue-500" />
-                    <p className="text-lg">Aggregating Team Data...</p>
-                </div>
+           {activeTab === 'extent' ? (
+               <ExtentReport />
            ) : (
-               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                   {stats.map((team, idx) => (
-                       <div 
-                         key={idx} 
-                         onClick={() => handleTeamClick(team)}
-                         className={`bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden transition-all flex flex-col relative group ${team.userName !== 'Unassigned' ? 'hover:shadow-lg hover:-translate-y-1 cursor-pointer' : 'opacity-60 cursor-default'}`}
-                       >
-                           {/* Hover Hint */}
-                           {team.userName !== 'Unassigned' && (
-                               <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-blue-600 text-white text-[10px] px-2 py-1 rounded-full font-bold z-10">
-                                   Click for Details
-                               </div>
-                           )}
+               <>
+                   {loading ? (
+                        <div className="h-full flex flex-col items-center justify-center text-gray-400">
+                            <Loader2 size={64} className="animate-spin mb-4 text-blue-500" />
+                            <p className="text-lg">Aggregating Team Data...</p>
+                        </div>
+                   ) : (
+                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                           {stats.map((team, idx) => (
+                               <div 
+                                 key={idx} 
+                                 onClick={() => handleTeamClick(team)}
+                                 className={`bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden transition-all flex flex-col relative group ${team.userName !== 'Unassigned' ? 'hover:shadow-lg hover:-translate-y-1 cursor-pointer' : 'opacity-60 cursor-default'}`}
+                               >
+                                   {/* Hover Hint */}
+                                   {team.userName !== 'Unassigned' && (
+                                       <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity bg-blue-600 text-white text-[10px] px-2 py-1 rounded-full font-bold z-10">
+                                           Click for Details
+                                       </div>
+                                   )}
 
-                           {/* Card Header */}
-                           <div className={`p-4 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r ${team.userName === 'Unassigned' ? 'from-gray-50 to-gray-100' : 'from-blue-50 to-white'}`}>
-                               <div className="flex items-center gap-3">
-                                   <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold shadow-sm ${team.userName === 'Unassigned' ? 'bg-gray-200 text-gray-400' : 'bg-blue-600 text-white'}`}>
-                                       {team.userName === 'Unassigned' ? '?' : team.userName.charAt(0)}
+                                   {/* Card Header */}
+                                   <div className={`p-4 border-b border-gray-100 flex justify-between items-center bg-gradient-to-r ${team.userName === 'Unassigned' ? 'from-gray-50 to-gray-100' : 'from-blue-50 to-white'}`}>
+                                       <div className="flex items-center gap-3">
+                                           <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold shadow-sm ${team.userName === 'Unassigned' ? 'bg-gray-200 text-gray-400' : 'bg-blue-600 text-white'}`}>
+                                               {team.userName === 'Unassigned' ? '?' : team.userName.charAt(0)}
+                                           </div>
+                                           <div>
+                                               <h3 className="font-bold text-gray-900 text-lg">{team.teamLabel}</h3>
+                                               <p className={`text-xs font-medium ${team.userName === 'Unassigned' ? 'text-gray-400 italic' : 'text-blue-600'}`}>
+                                                   {team.userName}
+                                               </p>
+                                           </div>
+                                       </div>
+                                       <div className="text-right">
+                                           <p className="text-xs text-gray-400 uppercase tracking-wider font-bold">Total Activity</p>
+                                           <p className="text-xl font-bold text-gray-800">{team.totalEntries}</p>
+                                       </div>
                                    </div>
-                                   <div>
-                                       <h3 className="font-bold text-gray-900 text-lg">{team.teamLabel}</h3>
-                                       <p className={`text-xs font-medium ${team.userName === 'Unassigned' ? 'text-gray-400 italic' : 'text-blue-600'}`}>
-                                           {team.userName}
-                                       </p>
-                                   </div>
-                               </div>
-                               <div className="text-right">
-                                   <p className="text-xs text-gray-400 uppercase tracking-wider font-bold">Total Activity</p>
-                                   <p className="text-xl font-bold text-gray-800">{team.totalEntries}</p>
-                               </div>
-                           </div>
 
-                           {/* Stats Grid */}
-                           <div className="p-4 grid grid-cols-2 gap-4 bg-white">
-                               {/* Highlighted Rows Count (Pink) */}
-                               <div className="bg-pink-50 p-3 rounded-lg border border-pink-100 col-span-2 flex items-center justify-between">
-                                   <div>
-                                       <span className="text-xs font-bold text-pink-700 uppercase">Highlighted (Active)</span>
-                                       <p className="text-2xl font-bold text-pink-800">{team.highlightedRows}</p>
-                                   </div>
-                                   <AlertTriangle size={24} className="text-pink-400"/>
-                               </div>
+                                   {/* Stats Grid */}
+                                   <div className="p-4 grid grid-cols-2 gap-4 bg-white">
+                                       {/* Highlighted Rows Count (Pink) */}
+                                       <div className="bg-pink-50 p-3 rounded-lg border border-pink-100 col-span-2 flex items-center justify-between">
+                                           <div>
+                                               <span className="text-xs font-bold text-pink-700 uppercase">Highlighted (Active)</span>
+                                               <p className="text-2xl font-bold text-pink-800">{team.highlightedRows}</p>
+                                           </div>
+                                           <AlertTriangle size={24} className="text-pink-400"/>
+                                       </div>
 
-                               <div className="bg-green-50 p-3 rounded-lg border border-green-100">
-                                   <div className="flex items-center justify-between mb-1">
-                                       <span className="text-xs font-bold text-green-700 uppercase">New</span>
-                                       <PlusCircle size={14} className="text-green-500"/>
+                                       <div className="bg-green-50 p-3 rounded-lg border border-green-100">
+                                           <div className="flex items-center justify-between mb-1">
+                                               <span className="text-xs font-bold text-green-700 uppercase">New</span>
+                                               <PlusCircle size={14} className="text-green-500"/>
+                                           </div>
+                                           <p className="text-xl font-bold text-green-800">{team.newRows}</p>
+                                       </div>
+                                       <div className="bg-orange-50 p-3 rounded-lg border border-orange-100">
+                                           <div className="flex items-center justify-between mb-1">
+                                               <span className="text-xs font-bold text-orange-700 uppercase">Updated</span>
+                                               <Edit size={14} className="text-orange-500"/>
+                                           </div>
+                                           <p className="text-xl font-bold text-orange-800">{team.updatedRows}</p>
+                                       </div>
+                                       <div className="bg-purple-50 p-3 rounded-lg border border-purple-100">
+                                           <div className="flex items-center justify-between mb-1">
+                                               <span className="text-xs font-bold text-purple-700 uppercase">Photos</span>
+                                               <Upload size={14} className="text-purple-500"/>
+                                           </div>
+                                           <p className="text-xl font-bold text-purple-800">{team.photosUploaded}</p>
+                                       </div>
+                                       <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
+                                           <div className="flex items-center justify-between mb-1">
+                                               <span className="text-xs font-bold text-blue-700 uppercase">Days</span>
+                                               <Activity size={14} className="text-blue-500"/>
+                                           </div>
+                                           <p className="text-xl font-bold text-blue-800">{team.activityByDate.length}</p>
+                                       </div>
                                    </div>
-                                   <p className="text-xl font-bold text-green-800">{team.newRows}</p>
+                                   
+                                   {/* Mini Chart Area */}
+                                   <div className="flex-1 min-h-[100px] bg-gray-50 border-t border-gray-100 p-4 relative">
+                                       {team.activityByDate.length > 0 ? (
+                                           <>
+                                             <p className="text-[10px] text-gray-400 font-bold uppercase mb-2 absolute top-2 left-4">Recent Activity Trend</p>
+                                             <ResponsiveContainer width="100%" height="100%">
+                                                <BarChart data={team.activityByDate} onClick={() => handleTeamClick(team)}>
+                                                    <XAxis dataKey="date" hide />
+                                                    <Tooltip 
+                                                        cursor={{fill: 'transparent'}}
+                                                        contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
+                                                        labelStyle={{color: '#6b7280', fontSize: '10px'}}
+                                                        itemStyle={{color: '#1f2937', fontWeight: 'bold', fontSize: '12px'}}
+                                                    />
+                                                    <Bar dataKey="count" radius={[4, 4, 0, 0]} cursor="pointer">
+                                                        {team.activityByDate.map((entry, index) => (
+                                                            <Cell key={`cell-${index}`} fill={COLORS[idx % COLORS.length]} />
+                                                        ))}
+                                                    </Bar>
+                                                </BarChart>
+                                             </ResponsiveContainer>
+                                           </>
+                                       ) : (
+                                           <div className="h-full flex items-center justify-center text-xs text-gray-400 italic">
+                                               No recent activity recorded
+                                           </div>
+                                       )}
+                                   </div>
                                </div>
-                               <div className="bg-orange-50 p-3 rounded-lg border border-orange-100">
-                                   <div className="flex items-center justify-between mb-1">
-                                       <span className="text-xs font-bold text-orange-700 uppercase">Updated</span>
-                                       <Edit size={14} className="text-orange-500"/>
-                                   </div>
-                                   <p className="text-xl font-bold text-orange-800">{team.updatedRows}</p>
-                               </div>
-                               <div className="bg-purple-50 p-3 rounded-lg border border-purple-100">
-                                   <div className="flex items-center justify-between mb-1">
-                                       <span className="text-xs font-bold text-purple-700 uppercase">Photos</span>
-                                       <Upload size={14} className="text-purple-500"/>
-                                   </div>
-                                   <p className="text-xl font-bold text-purple-800">{team.photosUploaded}</p>
-                               </div>
-                               <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
-                                   <div className="flex items-center justify-between mb-1">
-                                       <span className="text-xs font-bold text-blue-700 uppercase">Days</span>
-                                       <Activity size={14} className="text-blue-500"/>
-                                   </div>
-                                   <p className="text-xl font-bold text-blue-800">{team.activityByDate.length}</p>
-                               </div>
-                           </div>
-                           
-                           {/* Mini Chart Area */}
-                           <div className="flex-1 min-h-[100px] bg-gray-50 border-t border-gray-100 p-4 relative">
-                               {team.activityByDate.length > 0 ? (
-                                   <>
-                                     <p className="text-[10px] text-gray-400 font-bold uppercase mb-2 absolute top-2 left-4">Recent Activity Trend</p>
-                                     <ResponsiveContainer width="100%" height="100%">
-                                        <BarChart data={team.activityByDate} onClick={() => handleTeamClick(team)}>
-                                            <XAxis dataKey="date" hide />
-                                            <Tooltip 
-                                                cursor={{fill: 'transparent'}}
-                                                contentStyle={{borderRadius: '8px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)'}}
-                                                labelStyle={{color: '#6b7280', fontSize: '10px'}}
-                                                itemStyle={{color: '#1f2937', fontWeight: 'bold', fontSize: '12px'}}
-                                            />
-                                            <Bar dataKey="count" radius={[4, 4, 0, 0]} cursor="pointer">
-                                                {team.activityByDate.map((entry, index) => (
-                                                    <Cell key={`cell-${index}`} fill={COLORS[idx % COLORS.length]} />
-                                                ))}
-                                            </Bar>
-                                        </BarChart>
-                                     </ResponsiveContainer>
-                                   </>
-                               ) : (
-                                   <div className="h-full flex items-center justify-center text-xs text-gray-400 italic">
-                                       No recent activity recorded
-                                   </div>
-                               )}
-                           </div>
+                           ))}
                        </div>
-                   ))}
-               </div>
+                   )}
+               </>
            )}
        </div>
 

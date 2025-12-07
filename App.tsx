@@ -11,6 +11,7 @@ import { KMLViewer } from './components/KMLViewer';
 import { FMB } from './components/FMB';
 import { AdangalComparison } from './components/AdangalComparison';
 import { RythuDetails } from './components/RythuDetails';
+import { DktLandDetails } from './components/DktLandDetails';
 import { AdminDashboard } from './components/AdminDashboard';
 import { AttendanceDashboard } from './components/AttendanceDashboard';
 import { RecycleBin } from './components/RecycleBin';
@@ -91,6 +92,8 @@ function App() {
         return <Reports6A />;
       case 'rythu-details':
         return <RythuDetails />;
+      case 'dkt-land-details':
+        return <DktLandDetails />;
       case 'rythu-details-report':
         return <RythuDetailsReport />;
       case 'attendance-dashboard':

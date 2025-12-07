@@ -1,9 +1,9 @@
 
-
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useRef } from 'react';
 import { AuthService, DataService } from '../services/mockDataService';
 import { User, UserRole, AttendanceRecord } from '../types';
-import { KeyRound, Mail, User as UserIcon, Lock, ArrowRight, Info, CheckCircle, ArrowLeft, Camera, MapPin, Loader2, Navigation, Upload } from 'lucide-react';
+import { KeyRound, Mail, User as UserIcon, Lock, ArrowRight, Info, CheckCircle, ArrowLeft, Camera, Loader2 } from 'lucide-react';
+import { RythuLogo } from './RythuLogo';
 
 interface AuthProps {
   onLogin: (user: User) => void;
@@ -12,7 +12,6 @@ interface AuthProps {
 export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   // Views: login -> attendance -> forgot_email -> forgot_otp -> forgot_reset
   const [view, setView] = useState<'login' | 'attendance' | 'forgot_email' | 'forgot_otp' | 'forgot_reset'>('login');
-  const [appLogo, setAppLogo] = useState<string>('/ryathu.jpg');
   
   // Login State
   const [loginId, setLoginId] = useState('');
@@ -31,12 +30,6 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   const [selfieFile, setSelfieFile] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-
-  // Load Logo
-  useEffect(() => {
-    const config = DataService.getAppConfig();
-    setAppLogo(config.logo);
-  }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,7 +56,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
     }
   };
 
-  // --- ATTENDANCE LOGIC (SIMPLIFIED) ---
+  // --- ATTENDANCE LOGIC ---
   const handleSelfieUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (file) {
@@ -163,57 +156,73 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-agri-50 to-agri-100 flex items-center justify-center p-4">
-      <div className="bg-white w-full max-w-md rounded-2xl shadow-2xl overflow-hidden flex flex-col">
-        {/* Header - Logo Image Replacement */}
-        <div className="bg-white py-8 px-6 text-center flex justify-center items-center border-b border-gray-100 shadow-sm relative">
-           <img 
-             src={appLogo} 
-             alt="Rythu Samachar - Admin & Staff Portal" 
-             className="h-28 w-auto max-w-full object-contain drop-shadow-md hover:scale-105 transition-transform duration-500"
-           />
+    <div className="min-h-screen bg-gradient-to-br from-agri-50 to-agri-100 flex items-center justify-center p-4 font-sans">
+      <div className="bg-white w-full max-w-[450px] rounded-3xl shadow-2xl overflow-hidden flex flex-col border border-white/50 relative">
+        
+        {/* Decorative Top Bar */}
+        <div className="h-2 w-full bg-gradient-to-r from-agri-500 to-agri-700"></div>
+
+        {/* Logo Section */}
+        <div className="flex flex-col items-center justify-center pt-10 pb-4 px-8 bg-white">
+           <div className="relative group w-full flex justify-center">
+               <RythuLogo className="w-full max-w-[260px] h-auto transition-transform duration-500 hover:scale-105" />
+           </div>
         </div>
 
-        {/* Content */}
-        <div className="p-8 flex-1">
+        {/* Content Section */}
+        <div className="px-8 pb-10 pt-2 flex-1">
           
           {/* --- LOGIN VIEW --- */}
           {view === 'login' && (
-            <form onSubmit={handleLogin} className="space-y-5">
-              <h2 className="text-xl font-semibold text-gray-800 border-b pb-2">Sign In</h2>
-              {error && <div className="p-3 bg-red-50 text-red-600 text-sm rounded border border-red-100 flex items-center"><Info size={16} className="mr-2"/>{error}</div>}
+            <form onSubmit={handleLogin} className="space-y-5 animate-in fade-in slide-in-from-bottom-4 duration-500">
+              <div className="text-center mb-6">
+                  <h2 className="text-xl font-bold text-gray-800">Welcome Back</h2>
+                  <p className="text-sm text-gray-500">Please sign in to access the portal</p>
+              </div>
+
+              {error && (
+                  <div className="p-3 bg-red-50 text-red-600 text-sm rounded-lg border border-red-100 flex items-center shadow-sm">
+                      <Info size={16} className="mr-2 flex-shrink-0"/>{error}
+                  </div>
+              )}
               
-              <div className="relative">
-                <UserIcon className="absolute left-3 top-3 text-gray-400" size={20} />
-                <input 
-                  type="email" 
-                  placeholder="Email Address" 
-                  className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-agri-500 focus:outline-none"
-                  value={loginId}
-                  onChange={(e) => setLoginId(e.target.value)}
-                  required
-                />
+              <div className="space-y-4">
+                  <div className="relative group">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400 group-focus-within:text-agri-600 transition-colors">
+                        <UserIcon size={20} />
+                    </div>
+                    <input 
+                      type="email" 
+                      placeholder="Email Address" 
+                      className="w-full pl-10 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-agri-500 focus:border-transparent outline-none transition-all font-medium text-gray-700"
+                      value={loginId}
+                      onChange={(e) => setLoginId(e.target.value)}
+                      required
+                    />
+                  </div>
+
+                  <div className="relative group">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400 group-focus-within:text-agri-600 transition-colors">
+                        <Lock size={20} />
+                    </div>
+                    <input 
+                      type="password" 
+                      placeholder="Password" 
+                      className="w-full pl-10 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-agri-500 focus:border-transparent outline-none transition-all font-medium text-gray-700"
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                    />
+                  </div>
               </div>
 
-              <div className="relative">
-                <Lock className="absolute left-3 top-3 text-gray-400" size={20} />
-                <input 
-                  type="password" 
-                  placeholder="Password" 
-                  className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-agri-500 focus:outline-none"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
+              <div className="text-right">
+                <button type="button" onClick={() => { setView('forgot_email'); setError(''); }} className="text-agri-600 hover:text-agri-700 hover:underline text-sm font-semibold transition-colors">Forgot Password?</button>
               </div>
 
-              <button type="submit" className="w-full bg-agri-600 text-white py-3 rounded-lg font-semibold hover:bg-agri-700 transition flex justify-center items-center group">
-                Login <ArrowRight size={18} className="ml-2 group-hover:translate-x-1 transition-transform" />
+              <button type="submit" className="w-full bg-gradient-to-r from-agri-600 to-agri-700 text-white py-3.5 rounded-xl font-bold shadow-lg shadow-agri-600/30 hover:shadow-agri-600/50 hover:scale-[1.01] transition-all flex justify-center items-center group">
+                Sign In <ArrowRight size={20} className="ml-2 group-hover:translate-x-1 transition-transform" />
               </button>
-
-              <div className="text-center mt-4">
-                <button type="button" onClick={() => { setView('forgot_email'); setError(''); }} className="text-agri-600 hover:underline text-sm font-medium">Forgot Password?</button>
-              </div>
             </form>
           )}
           
@@ -230,23 +239,26 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
                   
                   <div className="flex flex-col items-center gap-4">
                       {selfieFile ? (
-                          <div className="relative w-full max-w-[250px] aspect-square rounded-xl overflow-hidden shadow-lg border-2 border-purple-200">
+                          <div className="relative w-full max-w-[250px] aspect-square rounded-xl overflow-hidden shadow-lg border-2 border-purple-200 group">
                               <img src={selfieFile} alt="Selfie Preview" className="w-full h-full object-cover" />
+                              <div className="absolute inset-0 bg-black/20 group-hover:bg-black/40 transition-colors"></div>
                               <button 
                                   onClick={() => setSelfieFile(null)}
-                                  className="absolute top-2 right-2 bg-red-600 text-white p-1 rounded-full shadow-md hover:bg-red-700"
+                                  className="absolute top-2 right-2 bg-white/90 text-red-600 p-2 rounded-full shadow-md hover:bg-white transition-all"
                                   title="Retake"
                               >
-                                  <ArrowLeft size={16} />
+                                  <ArrowLeft size={20} />
                               </button>
                           </div>
                       ) : (
                           <div 
                               onClick={() => fileInputRef.current?.click()}
-                              className="w-full max-w-[250px] aspect-square bg-gray-100 rounded-xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center cursor-pointer hover:bg-gray-200 transition-colors group"
+                              className="w-full max-w-[250px] aspect-square bg-gray-50 rounded-xl border-2 border-dashed border-gray-300 flex flex-col items-center justify-center cursor-pointer hover:bg-purple-50 hover:border-purple-300 transition-all group"
                           >
-                              <Camera size={48} className="text-gray-400 group-hover:text-purple-500 mb-2" />
-                              <span className="text-sm font-semibold text-gray-500 group-hover:text-gray-700">Tap to Take Selfie</span>
+                              <div className="p-4 bg-white rounded-full shadow-sm mb-3 group-hover:scale-110 transition-transform">
+                                <Camera size={32} className="text-gray-400 group-hover:text-purple-600" />
+                              </div>
+                              <span className="text-sm font-bold text-gray-500 group-hover:text-purple-700">Tap to Take Selfie</span>
                           </div>
                       )}
                       
@@ -264,12 +276,12 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
                           <button 
                               onClick={submitAttendance}
                               disabled={isSubmitting}
-                              className="w-full bg-green-600 text-white py-3 rounded-lg font-bold hover:bg-green-700 shadow-lg flex items-center justify-center animate-in slide-in-from-bottom-2"
+                              className="w-full bg-green-600 text-white py-3.5 rounded-xl font-bold hover:bg-green-700 shadow-lg shadow-green-500/30 flex items-center justify-center animate-in slide-in-from-bottom-2 transition-all"
                           >
                               {isSubmitting ? (
-                                  <><Loader2 size={20} className="animate-spin mr-2"/> Saving...</>
+                                  <><Loader2 size={20} className="animate-spin mr-2"/> Verifying...</>
                               ) : (
-                                  <><CheckCircle size={20} className="mr-2"/> Submit Attendance</>
+                                  <><CheckCircle size={20} className="mr-2"/> Confirm & Login</>
                               )}
                           </button>
                       )}
@@ -277,7 +289,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
                       {!selfieFile && (
                           <button 
                               onClick={() => fileInputRef.current?.click()}
-                              className="w-full bg-purple-600 text-white py-3 rounded-lg font-bold hover:bg-purple-700 shadow-md flex items-center justify-center"
+                              className="w-full bg-purple-600 text-white py-3.5 rounded-xl font-bold hover:bg-purple-700 shadow-lg shadow-purple-500/30 flex items-center justify-center transition-all"
                           >
                               <Camera size={20} className="mr-2"/> Open Camera
                           </button>
@@ -288,21 +300,29 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
 
           {/* --- FORGOT: EMAIL STEP --- */}
           {view === 'forgot_email' && (
-            <form onSubmit={handleSendOtp} className="space-y-5">
-               <h2 className="text-xl font-semibold text-gray-800">Reset Password</h2>
-               <p className="text-gray-500 text-sm">Enter your registered email address. We will send you a 6-digit OTP.</p>
-               {error && <div className="text-red-500 text-sm">{error}</div>}
+            <form onSubmit={handleSendOtp} className="space-y-5 animate-in fade-in slide-in-from-right-4">
+               <div className="text-center mb-4">
+                   <h2 className="text-xl font-bold text-gray-800">Reset Password</h2>
+                   <p className="text-sm text-gray-500">Enter your registered email to receive OTP</p>
+               </div>
                
-               <input 
-                 type="email" 
-                 placeholder="Enter Email" 
-                 className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-agri-500"
-                 value={resetEmail}
-                 onChange={e => setResetEmail(e.target.value)}
-                 required 
-               />
-               <button type="submit" className="w-full bg-agri-600 text-white py-3 rounded-lg font-semibold hover:bg-agri-700">Send OTP</button>
-               <button type="button" onClick={() => setView('login')} className="w-full text-center text-sm text-gray-500 mt-2 flex items-center justify-center">
+               {error && <div className="text-red-500 text-sm text-center bg-red-50 p-2 rounded">{error}</div>}
+               
+               <div className="relative group">
+                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400 group-focus-within:text-agri-600 transition-colors">
+                        <Mail size={20} />
+                    </div>
+                   <input 
+                     type="email" 
+                     placeholder="Enter Email Address" 
+                     className="w-full pl-10 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-agri-500 outline-none transition-all"
+                     value={resetEmail}
+                     onChange={e => setResetEmail(e.target.value)}
+                     required 
+                   />
+               </div>
+               <button type="submit" className="w-full bg-agri-600 text-white py-3.5 rounded-xl font-bold hover:bg-agri-700 shadow-lg transition-all">Send OTP</button>
+               <button type="button" onClick={() => setView('login')} className="w-full text-center text-sm text-gray-500 mt-2 flex items-center justify-center hover:text-gray-700 font-medium">
                    <ArrowLeft size={16} className="mr-1"/> Back to Login
                </button>
             </form>
@@ -310,63 +330,80 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
 
           {/* --- FORGOT: OTP STEP --- */}
           {view === 'forgot_otp' && (
-            <form onSubmit={handleVerifyOtp} className="space-y-5">
-               <h2 className="text-xl font-semibold text-gray-800">Enter OTP</h2>
+            <form onSubmit={handleVerifyOtp} className="space-y-5 animate-in fade-in slide-in-from-right-4">
+               <div className="text-center mb-4">
+                   <h2 className="text-xl font-bold text-gray-800">Verify OTP</h2>
+                   <p className="text-sm text-gray-500">Enter the 6-digit code sent to your email</p>
+               </div>
                
                {/* DEMO OTP DISPLAY */}
                {demoOtp && (
-                   <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg text-center animate-in zoom-in">
-                       <p className="text-xs text-yellow-700 font-bold uppercase mb-1">Demo Mode: Verification Code</p>
-                       <p className="text-3xl font-mono font-bold text-gray-800 tracking-widest">{demoOtp}</p>
-                       <p className="text-xs text-gray-400 mt-1">Valid for 3 minutes</p>
+                   <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-xl text-center animate-in zoom-in">
+                       <p className="text-xs text-yellow-700 font-bold uppercase mb-1">Demo Mode Code</p>
+                       <p className="text-3xl font-mono font-black text-gray-800 tracking-[0.2em]">{demoOtp}</p>
+                       <p className="text-[10px] text-gray-400 mt-1">Expires in 3 minutes</p>
                    </div>
                )}
 
-               <div className="bg-green-50 text-green-700 p-2 text-sm rounded flex items-center">
+               <div className="bg-green-50 text-green-700 p-3 text-sm rounded-lg flex items-center justify-center font-medium">
                    <CheckCircle size={16} className="mr-2"/> {resetMsg}
                </div>
-               {error && <div className="text-red-500 text-sm">{error}</div>}
+               {error && <div className="text-red-500 text-sm text-center bg-red-50 p-2 rounded">{error}</div>}
                
                <input 
                  type="text" 
-                 placeholder="6-Digit OTP" 
+                 placeholder="------" 
                  maxLength={6}
-                 className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-agri-500 text-center text-2xl tracking-widest"
+                 className="w-full p-4 border-2 border-gray-200 rounded-xl focus:border-agri-500 focus:ring-0 outline-none text-center text-3xl font-bold tracking-[0.5em] text-gray-700 transition-all"
                  value={otp}
                  onChange={e => setOtp(e.target.value.replace(/\D/g,''))}
                  required 
+                 autoFocus
                />
-               <button type="submit" className="w-full bg-agri-600 text-white py-3 rounded-lg font-semibold hover:bg-agri-700">Verify OTP</button>
-               <button type="button" onClick={() => setView('login')} className="w-full text-center text-sm text-gray-500 mt-2">Cancel</button>
+               <button type="submit" className="w-full bg-agri-600 text-white py-3.5 rounded-xl font-bold hover:bg-agri-700 shadow-lg transition-all">Verify & Proceed</button>
+               <button type="button" onClick={() => setView('login')} className="w-full text-center text-sm text-gray-500 hover:text-gray-700 font-medium">Cancel</button>
             </form>
           )}
 
           {/* --- FORGOT: RESET STEP --- */}
           {view === 'forgot_reset' && (
-            <form onSubmit={handleResetPassword} className="space-y-5">
-               <h2 className="text-xl font-semibold text-gray-800">Set New Password</h2>
-               {error && <div className="text-red-500 text-sm">{error}</div>}
-               
-               <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded">
-                   <strong>Rules:</strong> Min 8 chars, 1 Upper, 1 Lower, 1 Digit, 1 Special Char.
+            <form onSubmit={handleResetPassword} className="space-y-5 animate-in fade-in slide-in-from-right-4">
+               <div className="text-center mb-4">
+                   <h2 className="text-xl font-bold text-gray-800">New Password</h2>
+                   <p className="text-sm text-gray-500">Create a strong password for your account</p>
                </div>
 
-               <div className="relative">
-                <KeyRound className="absolute left-3 top-3 text-gray-400" size={20} />
+               {error && <div className="text-red-500 text-sm text-center bg-red-50 p-2 rounded">{error}</div>}
+               
+               <div className="text-xs text-gray-500 bg-gray-50 p-3 rounded-lg border border-gray-100">
+                   <strong className="text-gray-700">Requirements:</strong> Min 8 chars, 1 Uppercase, 1 Lowercase, 1 Number, 1 Special Character.
+               </div>
+
+               <div className="relative group">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none text-gray-400 group-focus-within:text-agri-600 transition-colors">
+                    <KeyRound size={20} />
+                </div>
                 <input 
                   type="password" 
-                  placeholder="New Password" 
-                  className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-agri-500 focus:outline-none"
+                  placeholder="Enter New Password" 
+                  className="w-full pl-10 pr-4 py-3.5 bg-gray-50 border border-gray-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-agri-500 outline-none transition-all font-medium"
                   value={newPassword}
                   onChange={e => setNewPassword(e.target.value)}
                   required 
                 />
                </div>
-               <button type="submit" className="w-full bg-green-600 text-white py-3 rounded-lg font-semibold hover:bg-green-700">Update Password</button>
+               <button type="submit" className="w-full bg-green-600 text-white py-3.5 rounded-xl font-bold hover:bg-green-700 shadow-lg shadow-green-500/30 transition-all flex justify-center items-center">
+                   <CheckCircle size={20} className="mr-2"/> Update Password
+               </button>
             </form>
           )}
 
         </div>
+      </div>
+      
+      {/* Footer Branding */}
+      <div className="fixed bottom-4 text-center w-full text-agri-900/40 text-xs font-semibold">
+          © {new Date().getFullYear()} Rythu Samachar Portal • Secure Access
       </div>
     </div>
   );

@@ -1,8 +1,8 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { AuthService, DataService } from '../services/mockDataService';
 import { User, UserRole } from '../types';
-import { UserPlus, Trash2, RotateCcw, Shield, Mail, Phone, Search, Users, ToggleLeft, ToggleRight, Eye, Calendar, Clock, Lock, CheckCircle, XCircle, X, FileSpreadsheet, FileText, Upload, Image as ImageIcon, RefreshCcw } from 'lucide-react';
+import { UserPlus, Trash2, Shield, Mail, Phone, Search, Users, ToggleLeft, ToggleRight, Eye, Calendar, Clock, Lock, CheckCircle, XCircle, X, FileSpreadsheet, FileText, RotateCcw } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -20,74 +20,15 @@ export const AdminDashboard: React.FC = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   
-  // Logo Upload State
-  const [appLogo, setAppLogo] = useState<string>('/ryathu.jpg');
-  const [logoPreview, setLogoPreview] = useState<string | null>(null);
-  const logoInputRef = useRef<HTMLInputElement>(null);
-  
   // View Profile State
   const [viewUser, setViewUser] = useState<User | null>(null);
 
   useEffect(() => {
     loadUsers();
-    loadLogo();
   }, []);
 
   const loadUsers = () => {
     setUsers(AuthService.getAllUsers());
-  };
-  
-  const loadLogo = () => {
-      const config = DataService.getAppConfig();
-      setAppLogo(config.logo);
-  };
-
-  const handleLogoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (file) {
-          // Validate File Type
-          if (!file.type.match(/image\/(jpeg|jpg|png|svg\+xml)/)) {
-              setError("Invalid file format. Please upload JPG, PNG, or SVG.");
-              return;
-          }
-          // Validate Size (2MB)
-          if (file.size > 2 * 1024 * 1024) {
-              setError("File size exceeds 2MB limit.");
-              return;
-          }
-
-          const reader = new FileReader();
-          reader.onload = (evt) => {
-              setLogoPreview(evt.target?.result as string);
-              setError('');
-          };
-          reader.readAsDataURL(file);
-      }
-  };
-
-  const saveLogo = () => {
-      if (logoPreview) {
-          DataService.updateAppLogo(logoPreview);
-          setAppLogo(logoPreview);
-          setLogoPreview(null);
-          setSuccess("Website logo updated successfully!");
-          setTimeout(() => setSuccess(''), 3000);
-      }
-  };
-
-  const resetLogo = () => {
-      if (window.confirm("Are you sure you want to reset the logo to default?")) {
-          DataService.resetAppLogo();
-          setAppLogo('/ryathu.jpg');
-          setLogoPreview(null);
-          setSuccess("Logo reset to default.");
-          setTimeout(() => setSuccess(''), 3000);
-      }
-  };
-
-  const cancelLogoUpload = () => {
-      setLogoPreview(null);
-      if (logoInputRef.current) logoInputRef.current.value = '';
   };
 
   const handleAddStaff = (e: React.FormEvent) => {
@@ -231,74 +172,6 @@ export const AdminDashboard: React.FC = () => {
               <span className="font-medium">{success || error}</span>
           </div>
       )}
-
-      {/* 3. SYSTEM BRANDING & LOGO UPLOAD */}
-      <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-          <h3 className="font-bold text-gray-800 mb-4 flex items-center">
-              <ImageIcon className="mr-2 text-purple-600" size={20} /> System Branding & Logo
-          </h3>
-          <div className="flex flex-col md:flex-row gap-8 items-start">
-              {/* Current Logo / Preview */}
-              <div className="flex flex-col items-center gap-3">
-                  <div className="w-48 h-24 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center bg-gray-50 overflow-hidden relative group">
-                      <img src={logoPreview || appLogo} alt="App Logo" className="max-w-full max-h-full object-contain p-2" />
-                      {logoPreview && (
-                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                              <span className="text-white text-xs font-bold px-2 py-1 bg-black/50 rounded">PREVIEW</span>
-                          </div>
-                      )}
-                  </div>
-                  <p className="text-xs text-gray-400">Recommended: 200x80px PNG/SVG</p>
-              </div>
-
-              {/* Controls */}
-              <div className="flex-1 space-y-4">
-                  <div className="flex gap-4 items-center">
-                      <input 
-                          type="file" 
-                          ref={logoInputRef} 
-                          className="hidden" 
-                          accept=".jpg,.jpeg,.png,.svg" 
-                          onChange={handleLogoSelect} 
-                      />
-                      {!logoPreview ? (
-                          <>
-                            <button 
-                                onClick={() => logoInputRef.current?.click()} 
-                                className="px-4 py-2 bg-purple-50 text-purple-700 rounded-lg font-bold text-sm border border-purple-200 hover:bg-purple-100 flex items-center"
-                            >
-                                <Upload size={16} className="mr-2" /> Upload New Logo
-                            </button>
-                            <button 
-                                onClick={resetLogo} 
-                                className="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg font-bold text-sm border border-gray-200 hover:bg-gray-200 flex items-center"
-                            >
-                                <RefreshCcw size={16} className="mr-2" /> Reset to Default
-                            </button>
-                          </>
-                      ) : (
-                          <>
-                             <button 
-                                onClick={saveLogo} 
-                                className="px-4 py-2 bg-green-600 text-white rounded-lg font-bold text-sm shadow-md hover:bg-green-700 flex items-center"
-                            >
-                                <CheckCircle size={16} className="mr-2" /> Save Logo
-                            </button>
-                            <button 
-                                onClick={cancelLogoUpload} 
-                                className="px-4 py-2 bg-gray-100 text-gray-600 rounded-lg font-bold text-sm hover:bg-gray-200 flex items-center"
-                            >
-                                <X size={16} className="mr-2" /> Cancel
-                            </button>
-                          </>
-                      )}
-                  </div>
-                  <div className="text-sm text-gray-500 bg-gray-50 p-3 rounded-lg border border-gray-100">
-                      <strong>Note:</strong> Uploaded logo will instantly replace the default branding across the Login Page, Sidebar, and Header for all staff members.
-                  </div>
-              </div>
-          </div>
-      </div>
 
       {/* 4. ADD STAFF FORM */}
       {isAddMode && (

@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useRef } from 'react';
 import { DataService } from '../services/mockDataService';
 import { ARegisterFile, DynamicRecord, ModuleType, UserRole, ARegisterSummary } from '../types';
@@ -15,7 +14,8 @@ interface UniversalDataModuleProps {
 }
 
 export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ moduleType, title, description }) => {
-  const [viewMode, setViewMode] = useState<'list' | 'file' | 'uploaded_full' | 'addRows'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'file' | 'addRows'>('list');
+  const [isFullScreen, setIsFullScreen] = useState(false);
   const [listTab, setListTab] = useState<'existing' | 'add'>('existing');
   const [activeTab, setActiveTab] = useState<'data' | 'report'>('data');
   const [selectedFile, setSelectedFile] = useState<ARegisterFile | null>(null);
@@ -67,7 +67,7 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
   const canStaffInsert = isStaff && (isData6A || isRythuDetails);
 
   // CHANGED: Removed DATA_6A from here to enable the "Photo/Doc" column for 6A Data
-  const isExcelDriven = ['AREGISTER'].includes(moduleType);
+  const isExcelDriven = ['AREGISTER', 'DKT_LAND'].includes(moduleType);
 
   // --- COLUMN PERMISSION HELPER ---
   const isColumnEditable = (colIndex: number, recordId?: string): boolean => {
@@ -128,16 +128,6 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
           return () => clearTimeout(timer);
       }
   }, [toast.show]);
-
-  // Adjust pagination when switching to full screen view
-  useEffect(() => {
-      if (viewMode === 'uploaded_full') {
-          setItemsPerPage(50);
-          setCurrentPage(1);
-      } else {
-          setItemsPerPage(10);
-      }
-  }, [viewMode]);
 
   const loadFiles = async () => {
     const loadedFiles = await DataService.getModuleFiles(moduleType);
@@ -336,6 +326,12 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (file) {
+          // Validate Excel extension
+          if (!file.name.match(/\.(xlsx|xls)$/i)) {
+              showToast("Invalid file type. Please select an Excel file (.xlsx, .xls)", "error");
+              if (fileInputRef.current) fileInputRef.current.value = '';
+              return;
+          }
           setSelectedUploadFile(file);
       }
   };
@@ -372,17 +368,13 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
       setCurrentPage(1);
       setViewMode('file');
       setActiveTab('data');
+      setIsFullScreen(false); // Reset fullscreen on new file open
   };
 
-  const handleOpenUploadedView = async (file: ARegisterFile) => {
-      setSelectedFile(file);
-      setCurrentColumns(file.columns || []);
-      const fileRecords = await DataService.getModuleRecords(moduleType, file.id);
-      fileRecords.sort((a, b) => a.id.localeCompare(b.id));
-      setRecords(fileRecords);
-      setEditingId(null);
-      setEditFormData(null);
-      setViewMode('uploaded_full'); // Switch to new view mode
+  const toggleFullScreen = () => {
+    setIsFullScreen(!isFullScreen);
+    // Optionally adjust items per page for larger screen
+    // setItemsPerPage(prev => !isFullScreen ? 25 : 10);
   };
 
   const confirmDeleteFile = async () => {
@@ -653,7 +645,7 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
 
   const handleExportExcel = () => {
       try {
-          const dataToExport = viewMode === 'uploaded_full' ? filteredRecords : records;
+          const dataToExport = filteredRecords;
           const exportData = dataToExport.map(record => {
             const cleanRecord: Record<string, any> = {};
             
@@ -717,7 +709,7 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
              if (!hasTotal) tableColumn.push('Total Extent');
         }
         
-        const dataToExport = viewMode === 'uploaded_full' ? filteredRecords : records;
+        const dataToExport = filteredRecords;
 
         const tableRows = dataToExport.map(record => {
             const rowData = currentColumns.slice(0, 10).map(col => {
@@ -758,9 +750,6 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
   };
 
   const filteredRecords = records.filter(r => {
-    // If Full Screen Uploaded View is Active, only show uploaded records
-    if (viewMode === 'uploaded_full' && r.is_uploaded !== 1) return false;
-
     if (!searchTerm) return true;
     const term = searchTerm.toLowerCase();
     
@@ -925,299 +914,6 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
 
   return (
     <>
-      {viewMode === 'uploaded_full' && (
-          <div className="fixed inset-0 bg-gray-50 z-[100] flex flex-col animate-in fade-in duration-300">
-               {/* Fixed Header */}
-               <div className="bg-white px-6 py-4 border-b border-gray-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4 shrink-0 z-20">
-                   <div className="flex items-center gap-4">
-                       <button onClick={() => setViewMode('file')} className="p-2 hover:bg-gray-100 rounded-full transition-colors group" title="Exit Full Screen">
-                           <Minimize2 size={24} className="text-gray-500 group-hover:text-corp-900" />
-                       </button>
-                       <div>
-                           <h2 className="text-2xl font-bold text-corp-900 flex items-center gap-2">
-                               <MonitorPlay size={24} className="text-blue-600"/>
-                               Uploaded Data Verification
-                           </h2>
-                           <div className="flex items-center gap-2 text-sm text-gray-500">
-                               <span className="font-semibold text-gray-800">{selectedFile?.fileName}</span>
-                               <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full text-xs font-bold">View Mode</span>
-                           </div>
-                       </div>
-                   </div>
-
-                   <div className="flex items-center gap-3 w-full md:w-auto">
-                        <div className="relative flex-1 md:w-80">
-                            <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
-                            <input 
-                                className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none shadow-sm"
-                                placeholder="Search in uploaded data..."
-                                value={searchTerm}
-                                onChange={e => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-                            />
-                        </div>
-                        <div className="flex gap-2">
-                             <button onClick={handleExportExcel} className="p-2 bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 font-bold text-sm shadow-sm" title="Export Excel">
-                                <FileSpreadsheet size={20} />
-                             </button>
-                             <button onClick={handleExportPDF} className="p-2 bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 font-bold text-sm shadow-sm" title="Export PDF">
-                                <FileText size={20} />
-                             </button>
-                        </div>
-                   </div>
-               </div>
-               
-               {/* DELETE MODAL IN FULL SCREEN */}
-                {deleteModal.isOpen && deleteModal.type === 'row' && (
-                    <div className="fixed inset-0 z-[110] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
-                        <div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6 text-center">
-                            <h3 className="text-xl font-bold mb-2">Delete Record?</h3>
-                            <div className="flex gap-3 mt-4">
-                                <button onClick={() => setDeleteModal({ isOpen: false, type: 'row', id: null })} className="flex-1 px-4 py-2 bg-gray-100 rounded-lg">Cancel</button>
-                                <button onClick={confirmDeleteRow} className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg">Confirm</button>
-                            </div>
-                        </div>
-                    </div>
-                )}
-                
-                {/* MEDIA VIEWER MODAL IN FULL SCREEN */}
-                {viewMedia && (
-                    <div className="fixed inset-0 z-[110] bg-black/95 flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setViewMedia(null)}>
-                        <div className="relative max-w-6xl w-full h-full max-h-[90vh] flex flex-col items-center justify-center" onClick={e => e.stopPropagation()}>
-                            <div className="absolute top-0 w-full flex justify-between items-center p-4 text-white">
-                                <h3 className="text-lg font-bold">{viewMedia.name || "Media Viewer"}</h3>
-                                <button onClick={() => setViewMedia(null)} className="p-2 hover:bg-white/20 rounded-full transition"><X size={32} /></button>
-                            </div>
-                            
-                            {viewMedia.type === 'pdf' ? (
-                                <div className="w-full h-full bg-white rounded-lg shadow-2xl flex flex-col overflow-hidden">
-                                    <iframe src={viewMedia.url} className="w-full h-full" title="PDF Viewer" />
-                                </div>
-                            ) : viewMedia.type === 'image' ? (
-                                <img src={viewMedia.url} className="max-w-full max-h-full rounded shadow-2xl border border-gray-700 object-contain" alt="Full View" />
-                            ) : (
-                                <div className="w-full max-w-md bg-white p-8 rounded-xl shadow-2xl text-center">
-                                    <FileText size={64} className="mx-auto text-blue-500 mb-4" />
-                                    <h3 className="text-xl font-bold text-gray-800 mb-2">Document File</h3>
-                                    <p className="text-gray-500 mb-6">This document format cannot be previewed directly in the browser.</p>
-                                    <a href={viewMedia.url} download="document" className="inline-flex items-center px-6 py-3 bg-blue-600 text-white rounded-lg font-bold hover:bg-blue-700 transition shadow-lg">
-                                        <Download size={20} className="mr-2" /> Download File
-                                    </a>
-                                </div>
-                            )}
-                        </div>
-                    </div>
-                )}
-
-               {/* Full Screen Table */}
-               <div className="flex-1 overflow-auto bg-white p-6 relative">
-                   <div className="min-w-full inline-block align-middle border border-gray-200 rounded-lg shadow-sm">
-                       <table className="min-w-full divide-y divide-gray-200">
-                           <thead className="bg-gray-100 sticky top-0 z-10 shadow-sm">
-                               <tr>
-                                   <th scope="col" className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-100 z-20 border-r border-gray-200 w-16">
-                                       #
-                                   </th>
-                                   {currentColumns.map((col, idx) => {
-                                       if (moduleType === 'DATA_6A' && col === 'Total Extent') return null;
-                                       return (
-                                           <th key={idx} scope="col" className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider whitespace-nowrap border-r border-gray-200 min-w-[150px]">
-                                               {col}
-                                           </th>
-                                       );
-                                   })}
-                                   {!isExcelDriven && <th className="px-3 py-3 w-24 text-center font-bold text-xs uppercase tracking-wider text-gray-500">{isRythuDetails ? 'Picture' : 'Photo/Doc'}</th>}
-                                   {canEdit && <th className="px-3 py-3 w-24 text-center font-bold text-xs uppercase tracking-wider text-gray-500 sticky right-0 bg-gray-100 z-20 border-l border-gray-200">Action</th>}
-                               </tr>
-                           </thead>
-                           <tbody className="bg-white divide-y divide-gray-200">
-                               {paginatedRecords.length > 0 ? (
-                                   paginatedRecords.map((record, index) => {
-                                       const globalIndex = (currentPage - 1) * itemsPerPage + index + 1;
-                                       
-                                       // PINK HIGHLIGHT LOGIC for Full Screen View
-                                       const isSpecialModule = ['DATA_6A', 'RYTHU_DETAILS'].includes(moduleType);
-                                       let rowClass = "";
-                                       if (isSpecialModule) {
-                                            if (record.is_modified === 1) {
-                                                rowClass = "bg-[#ffcce0] hover:bg-[#ffb6c1] transition-colors group"; // PINK Background for Manual Changes
-                                            } else {
-                                                rowClass = "hover:bg-blue-50/30 transition-colors group"; // Default
-                                            }
-                                       } else {
-                                            rowClass = "hover:bg-blue-50/30 transition-colors group";
-                                       }
-
-                                       return (
-                                           <tr key={record.id} className={rowClass}>
-                                               <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900 sticky left-0 bg-white z-10 border-r border-gray-100 shadow-[4px_0_8px_-4px_rgba(0,0,0,0.1)]">
-                                                   {globalIndex}
-                                               </td>
-                                               {currentColumns.map((col, idx) => {
-                                                   if (moduleType === 'DATA_6A' && col === 'Total Extent') return null;
-                                                   
-                                                   // EDITABLE LOGIC INSIDE FULL SCREEN
-                                                   if (isData6A && (idx as number) === 1) {
-                                                       return (
-                                                            <td key={idx} className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 border-r border-gray-100 max-w-xs truncate">
-                                                                {editingId === record.id ? (
-                                                                    isColumnEditable(idx, record.id) ? (
-                                                                        <input 
-                                                                            autoFocus={idx === 0}
-                                                                            className="w-full p-1.5 text-sm border-2 border-blue-200 rounded focus:ring-2 focus:ring-blue-500 outline-none" 
-                                                                            value={editFormData?.[col] || ''} 
-                                                                            onChange={e => handleEditChange(col, e.target.value)} 
-                                                                        />
-                                                                    ) : (
-                                                                        <input disabled className="w-full p-1.5 text-sm border border-gray-200 rounded bg-gray-50 text-gray-500 cursor-not-allowed select-none" value={editFormData?.[col] || ''} title="Read Only" />
-                                                                    )
-                                                                ) : (
-                                                                    record[col]
-                                                                )}
-                                                            </td>
-                                                       )
-                                                   }
-                                                   
-                                                   // Check for RYTHU PHOTO Column (Exclusive Logic)
-                                                   if (isRythuDetails && (col.toLowerCase().includes('photo') || col.toLowerCase().includes('picture'))) {
-                                                       const mediaUrl = editFormData && editingId === record.id ? editFormData[col] : record[col];
-                                                       // STRICT: Only Admin can upload photo - BUT in Full Screen if we allow upload, logic is here:
-                                                       const isPhotoEditable = isAdmin; // Admin can always edit photo directly
-                                                       return (
-                                                           <td key={idx} className="px-3 py-2 border-r border-gray-100 align-middle text-center w-[120px]">
-                                                               <PhotoCell 
-                                                                   url={mediaUrl} 
-                                                                   isEditable={isPhotoEditable}
-                                                                   onUpload={(e) => handleDirectMediaUpload(record.id, col, e)}
-                                                                   onClick={() => openMediaViewer(mediaUrl, col)}
-                                                               />
-                                                           </td>
-                                                       );
-                                                   }
-
-                                                  // Check for Generic Media Columns
-                                                  if (isMediaColumn(col)) {
-                                                       const mediaUrl = editFormData && editingId === record.id ? editFormData[col] : record[col];
-                                                       return (
-                                                           <td key={idx} className="px-3 py-2 border-r border-gray-100 align-middle text-center w-[120px]">
-                                                               <MediaCell 
-                                                                   url={mediaUrl} 
-                                                                   isEditable={editingId === record.id && isColumnEditable(idx, record.id)}
-                                                                   onUpload={(e) => handleMediaUpload(record.id, col, e)}
-                                                                   onClick={() => openMediaViewer(mediaUrl, col)}
-                                                               />
-                                                           </td>
-                                                       );
-                                                  }
-
-                                                  // Normal or Edited Cell
-                                                  return (
-                                                       <td key={idx} className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 border-r border-gray-100 max-w-xs truncate">
-                                                          {editingId === record.id ? (
-                                                              isColumnEditable(idx, record.id) ? (
-                                                                  (idx as number) === 23 && isData6A ? (
-                                                                       <select 
-                                                                          autoFocus={idx === 0}
-                                                                          className="w-full p-1.5 text-sm border-2 border-blue-200 rounded focus:ring-2 focus:ring-blue-500 outline-none bg-white"
-                                                                          value={editFormData?.[col] || ''}
-                                                                          onChange={e => handleEditChange(col, e.target.value)}
-                                                                       >
-                                                                          {REASONS_DROPDOWN.map(r => <option key={r} value={r}>{r}</option>)}
-                                                                       </select>
-                                                                  ) : (
-                                                                       <input 
-                                                                          autoFocus={idx === 0}
-                                                                          className="w-full p-1.5 text-sm border-2 border-blue-200 rounded focus:ring-2 focus:ring-blue-500 outline-none" 
-                                                                          value={editFormData?.[col] || ''} 
-                                                                          onChange={e => handleEditChange(col, e.target.value)} 
-                                                                       />
-                                                                  )
-                                                              ) : (
-                                                                   <input disabled className="w-full p-1.5 text-sm border border-gray-200 rounded bg-gray-50 text-gray-500 cursor-not-allowed select-none" value={editFormData?.[col] || ''} title="Read Only" />
-                                                              )
-                                                          ) : (
-                                                              String(record[col] || '')
-                                                          )}
-                                                       </td>
-                                                  );
-                                               })}
-                                               {!isExcelDriven && (
-                                                  <td className="p-2 align-middle text-center bg-gray-50/30 w-24">
-                                                       <MediaCell 
-                                                           url={editFormData && editingId === record.id ? editFormData.imageUrl : record.imageUrl} 
-                                                           isEditable={editingId === record.id}
-                                                           onUpload={(e) => handleMediaUpload(record.id, null, e)}
-                                                           onClick={() => openMediaViewer(editingId === record.id ? editFormData?.imageUrl || '' : record.imageUrl || '', 'Photo/Doc')}
-                                                       />
-                                                  </td>
-                                      )}
-                                      {canEdit && (
-                                        <td className="px-2 py-2 text-center sticky right-0 bg-white shadow-sm border-l border-gray-100">
-                                            {editingId === record.id ? (
-                                                <div className="flex justify-center gap-1">
-                                                    <button onClick={handleSaveRow} className="p-1.5 bg-green-100 text-green-700 rounded hover:bg-green-200"><CheckCircle size={14}/></button>
-                                                    <button onClick={handleCancelEdit} className="p-1.5 bg-gray-100 text-gray-600 rounded hover:bg-gray-200"><X size={14}/></button>
-                                                </div>
-                                            ) : (
-                                                <div className="flex justify-center gap-1">
-                                                    <button onClick={() => handleStartEdit(record)} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded"><Edit size={14}/></button>
-                                                    {canStaffInsert && (
-                                                        <button 
-                                                            onClick={() => handleInsertRowAfter(record.id)} 
-                                                            className="p-1.5 text-green-600 hover:bg-green-50 rounded border border-transparent hover:border-green-200 transition-colors"
-                                                            title="Add Row Below"
-                                                        >
-                                                            <PlusCircle size={14} />
-                                                        </button>
-                                                    )}
-                                                    {canDelete && (<button onClick={() => initiateDeleteRow(record.id)} className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded" title="Move to Recycle Bin"><Trash2 size={14}/></button>)}
-                                                </div>
-                                            )}
-                                        </td>
-                                       )}
-                                           </tr>
-                                       );
-                                   })
-                               ) : (
-                                   <tr>
-                                       <td colSpan={currentColumns.length + (!isExcelDriven ? 3 : 2)} className="px-6 py-20 text-center text-gray-400">
-                                           <FileText size={48} className="mx-auto mb-4 opacity-20" />
-                                           <p className="text-lg font-medium">No uploaded data found matching your search.</p>
-                                       </td>
-                                   </tr>
-                               )}
-                           </tbody>
-                       </table>
-                   </div>
-               </div>
-
-               {/* Full Screen Pagination Footer */}
-               <div className="bg-white border-t border-gray-200 px-6 py-4 flex items-center justify-between shrink-0 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-20">
-                    <div className="text-sm text-gray-500">
-                        Showing <span className="font-bold text-gray-900">{(currentPage - 1) * itemsPerPage + 1}</span> to <span className="font-bold text-gray-900">{Math.min(currentPage * itemsPerPage, filteredRecords.length)}</span> of <span className="font-bold text-gray-900">{filteredRecords.length}</span> records
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <button 
-                            onClick={() => setCurrentPage(p => Math.max(1, p - 1))} 
-                            disabled={currentPage === 1} 
-                            className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-100 disabled:opacity-50 flex items-center gap-1"
-                        >
-                            <ChevronLeft size={16}/> Previous
-                        </button>
-                        <span className="px-4 py-2 bg-blue-50 text-blue-700 font-bold rounded-lg text-sm border border-blue-100">
-                            Page {currentPage} of {totalPages}
-                        </span>
-                        <button 
-                            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} 
-                            disabled={currentPage === totalPages} 
-                            className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-100 disabled:opacity-50 flex items-center gap-1"
-                        >
-                            Next <ChevronRight size={16}/>
-                        </button>
-                    </div>
-               </div>
-          </div>
-      )}
-
       {viewMode === 'list' && (
           <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
               {toast.show && (
@@ -1289,7 +985,6 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
                                                       <button onClick={() => handleViewFile(file)} className="px-5 py-2.5 bg-corp-900 text-white rounded-lg text-sm font-bold hover:bg-corp-800 shadow-md flex items-center transition-all">
                                                           <ArrowLeft size={16} className="rotate-180 mr-2" /> Open
                                                       </button>
-                                                      <button onClick={() => handleOpenUploadedView(file)} className="p-2.5 text-blue-600 bg-white hover:bg-blue-50 border border-blue-100 rounded-lg transition-colors shadow-sm" title="Full Screen View"><Maximize2 size={20} /></button>
                                                       {canDelete && <button onClick={(e) => initiateDeleteFile(file.id, e)} className="p-2.5 text-corp-400 bg-white hover:text-red-600 hover:bg-red-50 border border-gray-100 rounded-lg transition-colors shadow-sm" title="Move to Recycle Bin"><Trash2 size={20} /></button>}
                                                   </div>
                                               </div>
@@ -1303,46 +998,48 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
                               <div className="flex flex-col items-center justify-center h-full max-w-2xl mx-auto animate-in fade-in zoom-in duration-300">
                                   <div className="bg-white p-8 rounded-2xl shadow-xl border border-blue-100 w-full text-center">
                                       <div className="w-16 h-16 bg-blue-50 rounded-full flex items-center justify-center mx-auto mb-6 text-blue-600 shadow-inner">
-                                          <Upload size={32} />
+                                          <FileSpreadsheet size={32} />
                                       </div>
                                       <h2 className="text-2xl font-bold text-gray-800 mb-2">Upload Excel File</h2>
                                       <p className="text-gray-500 mb-8">Select a .xlsx or .xls file to import new 6A data records.</p>
                                       
-                                      <label className="block w-full cursor-pointer group">
-                                          <input 
-                                              type="file" 
-                                              accept=".xlsx,.xls" 
-                                              onChange={handleFileSelect} 
-                                              className="hidden" 
-                                          />
-                                          <div className={`border-2 border-dashed rounded-xl p-8 transition-all ${selectedUploadFile ? 'border-green-400 bg-green-50' : 'border-gray-300 hover:border-blue-400 hover:bg-gray-50'}`}>
-                                              {selectedUploadFile ? (
-                                                  <div className="flex flex-col items-center text-green-700">
-                                                      <FileSpreadsheet size={40} className="mb-2" />
-                                                      <span className="font-bold text-lg">{selectedUploadFile.name}</span>
-                                                      <span className="text-sm opacity-80 mt-1">Ready to Upload</span>
-                                                  </div>
-                                              ) : (
-                                                  <div className="flex flex-col items-center text-gray-400 group-hover:text-blue-500">
-                                                      <Plus size={40} className="mb-2" />
-                                                      <span className="font-medium">Click to Choose File</span>
-                                                  </div>
-                                              )}
-                                          </div>
-                                      </label>
-
-                                      {selectedUploadFile && (
+                                      {/* File Picker */}
+                                      <input 
+                                          type="file" 
+                                          ref={fileInputRef} 
+                                          accept=".xlsx,.xls" 
+                                          onChange={handleFileSelect} 
+                                          className="hidden" 
+                                      />
+                                      
+                                      {!selectedUploadFile ? (
                                           <button 
-                                              onClick={handleUpload} 
-                                              disabled={isLoading}
-                                              className="mt-6 w-full bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 shadow-lg shadow-blue-500/30 transition-all flex items-center justify-center disabled:opacity-70 disabled:cursor-wait"
+                                            onClick={() => fileInputRef.current?.click()}
+                                            className="px-8 py-3 bg-corp-900 text-white rounded-lg font-bold shadow-lg hover:bg-black transition-all flex items-center justify-center mx-auto"
                                           >
-                                              {isLoading ? (
-                                                  <><Loader2 size={20} className="animate-spin mr-2"/> Processing File...</>
-                                              ) : (
-                                                  <><CheckCircle size={20} className="mr-2"/> Upload Data</>
-                                              )}
+                                            <FileSpreadsheet size={20} className="mr-2" /> Select Excel File
                                           </button>
+                                      ) : (
+                                          <div className="space-y-6">
+                                              <div className="bg-green-50 border border-green-200 rounded-xl p-4 flex flex-col items-center">
+                                                  <FileSpreadsheet size={32} className="text-green-600 mb-2" />
+                                                  <span className="font-bold text-gray-800">{selectedUploadFile.name}</span>
+                                                  <span className="text-xs text-gray-500">{(selectedUploadFile.size / 1024).toFixed(2)} KB</span>
+                                                  <button onClick={() => setSelectedUploadFile(null)} className="text-xs text-red-500 hover:underline mt-2">Remove / Change</button>
+                                              </div>
+                                              
+                                              <button 
+                                                  onClick={handleUpload} 
+                                                  disabled={isLoading}
+                                                  className="w-full bg-green-600 text-white py-3 rounded-xl font-bold hover:bg-green-700 shadow-lg shadow-green-500/30 transition-all flex items-center justify-center disabled:opacity-70"
+                                              >
+                                                  {isLoading ? (
+                                                      <><Loader2 size={20} className="animate-spin mr-2"/> Processing...</>
+                                                  ) : (
+                                                      <><CheckCircle size={20} className="mr-2"/> Upload Data</>
+                                                  )}
+                                              </button>
+                                          </div>
                                       )}
                                   </div>
                               </div>
@@ -1391,8 +1088,6 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
                                             <button onClick={() => handleViewFile(file)} className="px-5 py-2.5 bg-corp-900 text-white rounded-lg text-sm font-bold hover:bg-corp-800 shadow-md flex items-center transition-all">
                                                 <ArrowLeft size={16} className="rotate-180 mr-2" /> Open
                                             </button>
-                                            {/* Full Screen View Button for All Users */}
-                                            <button onClick={() => handleOpenUploadedView(file)} className="p-2.5 text-blue-600 hover:bg-blue-50 border border-blue-100 rounded-lg transition-colors" title="Full Screen View"><Maximize2 size={20} /></button>
                                             {canDelete && <button onClick={(e) => initiateDeleteFile(file.id, e)} className="p-2.5 text-corp-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Move to Recycle Bin"><Trash2 size={20} /></button>}
                                         </div>
                                     </div>
@@ -1406,13 +1101,13 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
       )}
 
       {viewMode === 'file' && (
-        <div className="flex flex-col h-[calc(100vh-8rem)] animate-in fade-in slide-in-from-right-4">
-          {toast.show && (<div className={`fixed top-24 right-5 z-50 px-6 py-4 rounded-lg shadow-2xl flex items-center gap-3 animate-in slide-in-from-right duration-300 ${toast.type === 'success' ? 'bg-corp-900 text-white' : 'bg-red-600 text-white'}`}>{toast.type === 'success' ? <CheckCircle size={20} /> : <AlertTriangle size={20} />}<span className="font-bold">{toast.message}</span></div>)}
-          {deleteModal.isOpen && deleteModal.type === 'row' && (<div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"><div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6 text-center"><h3 className="text-xl font-bold mb-2">Delete Record?</h3><div className="flex gap-3 mt-4"><button onClick={() => setDeleteModal({ isOpen: false, type: 'row', id: null })} className="flex-1 px-4 py-2 bg-gray-100 rounded-lg">Cancel</button><button onClick={confirmDeleteRow} className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg">Confirm</button></div></div></div>)}
+        <div className={isFullScreen ? "fixed inset-0 z-[100] bg-white flex flex-col animate-in fade-in zoom-in-95" : "flex flex-col h-[calc(100vh-8rem)] animate-in fade-in slide-in-from-right-4"}>
+          {toast.show && (<div className={`fixed top-24 right-5 z-[110] px-6 py-4 rounded-lg shadow-2xl flex items-center gap-3 animate-in slide-in-from-right duration-300 ${toast.type === 'success' ? 'bg-corp-900 text-white' : 'bg-red-600 text-white'}`}>{toast.type === 'success' ? <CheckCircle size={20} /> : <AlertTriangle size={20} />}<span className="font-bold">{toast.message}</span></div>)}
+          {deleteModal.isOpen && deleteModal.type === 'row' && (<div className="fixed inset-0 z-[110] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"><div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6 text-center"><h3 className="text-xl font-bold mb-2">Delete Record?</h3><div className="flex gap-3 mt-4"><button onClick={() => setDeleteModal({ isOpen: false, type: 'row', id: null })} className="flex-1 px-4 py-2 bg-gray-100 rounded-lg">Cancel</button><button onClick={confirmDeleteRow} className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg">Confirm</button></div></div></div>)}
           
           {/* MEDIA VIEWER MODAL */}
           {viewMedia && (
-            <div className="fixed inset-0 z-50 bg-black/95 flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setViewMedia(null)}>
+            <div className="fixed inset-0 z-[110] bg-black/95 flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setViewMedia(null)}>
                 <div className="relative max-w-6xl w-full h-full max-h-[90vh] flex flex-col items-center justify-center" onClick={e => e.stopPropagation()}>
                     <div className="absolute top-0 w-full flex justify-between items-center p-4 text-white">
                         <h3 className="text-lg font-bold">{viewMedia.name || "Media Viewer"}</h3>
@@ -1440,10 +1135,18 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
           )}
 
           <div className="bg-white border-b border-corp-200 px-6 py-4 flex items-center justify-between shadow-sm shrink-0">
-             <div className="flex items-center gap-4"><button onClick={() => setViewMode('list')} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><ArrowLeft size={20} /></button><div><h2 className="text-xl font-bold text-corp-900">{selectedFile?.fileName}</h2><div className="flex items-center gap-2 text-xs text-corp-500"><span className="bg-corp-100 px-2 py-0.5 rounded text-corp-700 font-medium">{records.length} Records</span>{activeTab === 'data' && <span>Page {currentPage} of {totalPages}</span>}</div></div></div>
+             <div className="flex items-center gap-4">
+                 {!isFullScreen && (
+                     <button onClick={() => setViewMode('list')} className="p-2 hover:bg-gray-100 rounded-full transition-colors"><ArrowLeft size={20} /></button>
+                 )}
+                 <div>
+                     <h2 className="text-xl font-bold text-corp-900">{selectedFile?.fileName}</h2>
+                     <div className="flex items-center gap-2 text-xs text-corp-500"><span className="bg-corp-100 px-2 py-0.5 rounded text-corp-700 font-medium">{records.length} Records</span>{activeTab === 'data' && <span>Page {currentPage} of {totalPages}</span>}</div>
+                 </div>
+             </div>
              <div className="flex gap-2">
                  {moduleType === 'AREGISTER' && (<div className="flex bg-gray-100 p-1 rounded-lg mr-4"><button onClick={() => setActiveTab('data')} className={`px-4 py-2 rounded-md text-sm font-bold transition-all flex items-center ${activeTab === 'data' ? 'bg-white text-corp-900 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}><FileText size={16} className="mr-2"/> Data Sheet</button><button onClick={() => setActiveTab('report')} className={`px-4 py-2 rounded-md text-sm font-bold transition-all flex items-center ${activeTab === 'report' ? 'bg-white text-agri-700 shadow-sm' : 'text-gray-500 hover:text-gray-900'}`}><BarChart3 size={16} className="mr-2"/> A-Register Report</button></div>)}
-                 <button onClick={() => handleOpenUploadedView(selectedFile!)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg border border-blue-200 flex items-center font-bold text-sm" title="Uploaded Data - Full Screen View"><Maximize2 size={16} className="mr-2" /> Full Screen</button>
+                 <button onClick={toggleFullScreen} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg border border-blue-200 flex items-center font-bold text-sm" title={isFullScreen ? "Exit Full Screen" : "Full Screen"}>{isFullScreen ? <Minimize2 size={20} /> : <Maximize2 size={20} />}</button>
                  <button onClick={handleExportExcel} className="p-2 text-green-600 hover:bg-green-50 rounded-lg border border-green-200" title="Export to Excel"><FileSpreadsheet size={20} /></button>
                  <button onClick={handleExportPDF} className="p-2 text-red-600 hover:bg-red-50 rounded-lg border border-red-200" title="Export to PDF"><FileText size={20} /></button>
              </div>
@@ -1494,7 +1197,7 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
                       </div>
                   </div>
 
-                  <div className="flex-1 bg-white border border-corp-200 rounded-xl overflow-hidden shadow-sm relative flex flex-col min-h-0 max-h-[600px]">
+                  <div className="flex-1 bg-white border border-corp-200 rounded-xl overflow-hidden shadow-sm relative flex flex-col min-h-0 max-h-[600px] flex-grow">
                       <div className="flex-1 overflow-auto scrollbar-thin scrollbar-thumb-gray-300">
                           <table className="w-full text-left border-collapse table-auto">
                               <thead className="sticky top-0 z-20 shadow-sm"><tr className="bg-gray-50/95 backdrop-blur-sm border-b border-corp-200 text-xs font-bold text-corp-400 uppercase">{currentColumns.map((col, idx) => {
@@ -1513,6 +1216,8 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
                                       if (isSpecialModule) {
                                           if (record.is_modified === 1) {
                                               rowClass = "bg-[#ffcce0] hover:bg-[#ffb6c1] transition-colors group"; // PINK Background for Manual Changes
+                                          } else if (record.is_new === 1) {
+                                              rowClass = "bg-[#d4f8d4] hover:bg-green-100 transition-colors group"; // GREEN for New Uploads
                                           } else {
                                               rowClass = "hover:bg-gray-50 transition-colors group"; // Default White for Bulk Upload/Unchanged
                                           }

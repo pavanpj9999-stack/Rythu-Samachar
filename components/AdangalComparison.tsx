@@ -11,7 +11,8 @@ export const AdangalComparison: React.FC = () => {
   const moduleType: ModuleType = 'ADANGAL';
   const title = "Adangal Comparison";
   const description = "Upload Base Adangal (ROR) with full Excel formatting support.";
-  const [viewMode, setViewMode] = useState<'list' | 'file' | 'uploaded_full'>('list');
+  const [viewMode, setViewMode] = useState<'list' | 'file'>('list');
+  const [isFullScreen, setIsFullScreen] = useState(false);
   const [selectedFile, setSelectedFile] = useState<ARegisterFile | null>(null);
   const [files, setFiles] = useState<ARegisterFile[]>([]);
   const [records, setRecords] = useState<DynamicRecord[]>([]);
@@ -168,23 +169,18 @@ export const AdangalComparison: React.FC = () => {
       setComparisonRecords([]); setComparisonFileName(""); 
       setEditingId(null); setEditFormData(null); 
       setCurrentPage(1); setViewMode('file');
+      setIsFullScreen(false);
       setItemsPerPage(10);
   };
 
-  const handleOpenUploadedView = async (file: ARegisterFile) => {
-      setSelectedFile(file);
-      setCurrentColumns(file.columns || []);
-      setMergedCells(file.metadata?.mergedCells || []);
-      const fileRecords = await DataService.getModuleRecords(moduleType, file.id);
-      fileRecords.sort((a, b) => a.id.localeCompare(b.id));
-      setRecords(fileRecords);
-      setComparisonRecords([]); 
-      setComparisonFileName(""); 
-      setEditingId(null); 
-      setEditFormData(null); 
-      setViewMode('uploaded_full');
-      setItemsPerPage(50);
-      setCurrentPage(1);
+  const toggleFullScreen = () => {
+    setIsFullScreen(!isFullScreen);
+    if (!isFullScreen) {
+        setItemsPerPage(50);
+        setCurrentPage(1);
+    } else {
+        setItemsPerPage(10);
+    }
   };
 
   const getCellMergeProps = (rowIndex: number, colIndex: number, merges: any[]) => {
@@ -209,9 +205,6 @@ export const AdangalComparison: React.FC = () => {
 
   // --- FILTERING ---
   const filteredRecords = records.filter(record => {
-    // If Full Screen Uploaded View is Active, only show uploaded records
-    if (viewMode === 'uploaded_full' && record.is_uploaded !== 1) return false;
-
     let matches = true;
     // 1. Generic Search (Survey / Khata)
     if (searchTerm) {
@@ -262,7 +255,7 @@ export const AdangalComparison: React.FC = () => {
   // --- EXPORT HANDLERS ---
   const handleExportExcel = () => {
     try {
-        const dataToExport = viewMode === 'uploaded_full' ? filteredRecords : filteredRecords;
+        const dataToExport = filteredRecords;
         const exportData = dataToExport.map(record => {
             const row: any = {};
             // Add Serial Number
@@ -306,7 +299,7 @@ export const AdangalComparison: React.FC = () => {
         const displayCols = currentColumns.slice(0, 10);
         const tableColumn = ['S.No', ...displayCols]; 
         
-        const dataToExport = viewMode === 'uploaded_full' ? filteredRecords : filteredRecords;
+        const dataToExport = filteredRecords;
 
         const tableRows = dataToExport.map((record, index) => {
             const rowData: (string | number)[] = [index + 1];
@@ -332,145 +325,19 @@ export const AdangalComparison: React.FC = () => {
     }
   };
 
-  if (viewMode === 'list') { return ( <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">{toast.show && <div className={`fixed top-24 right-5 z-50 px-6 py-4 rounded-lg shadow-2xl flex items-center gap-3 animate-in slide-in-from-right ${toast.type === 'success' ? 'bg-corp-900 text-white' : 'bg-red-600 text-white'}`}>{toast.message}</div>}{deleteModal.isOpen && deleteModal.type === 'file' && (<div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"><div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6 text-center"><h3 className="text-xl font-bold mb-2">Delete File?</h3><div className="flex gap-3 mt-4"><button onClick={() => setDeleteModal({ isOpen: false, type: 'file', id: null })} className="flex-1 px-4 py-2 bg-gray-100 rounded-lg">Cancel</button><button onClick={confirmDeleteFile} className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg">Confirm</button></div></div></div>)}<div className="bg-white p-8 rounded-xl shadow-sm border border-corp-100 flex flex-col md:flex-row items-center gap-8"><div className="flex-1"><h2 className="text-2xl font-bold text-corp-800 flex items-center mb-2"><GitCompare className="mr-3 text-agri-600" size={28} /> {title}</h2><p className="text-corp-500 mb-4">{description}</p>{isAdmin && (<><input type="file" ref={fileInputRef} className="hidden" accept=".xlsx, .xls" onChange={handleBaseUpload} /><button onClick={() => fileInputRef.current?.click()} className="px-6 py-3 bg-corp-900 text-white rounded-lg hover:bg-black font-medium shadow-lg flex items-center" disabled={isLoading}>{isLoading ? <RefreshCw className="animate-spin mr-2"/> : <Upload size={20} className="mr-2" />} {isLoading ? 'Processing...' : 'Upload Base Adangal File'}</button></>)}</div></div><div className="bg-white rounded-xl shadow-sm border border-corp-100 overflow-hidden"><div className="p-5 border-b bg-gray-50"><h3 className="font-bold text-corp-800">Uploaded Base Files</h3></div><div className="divide-y divide-corp-50">{files.length === 0 ? <div className="p-12 text-center text-corp-300">No files yet.</div> : files.map(file => (<div key={file.id} className="p-5 flex flex-col sm:flex-row items-center justify-between hover:bg-blue-50/50 transition-colors group"><div className="flex items-center space-x-4"><FileSpreadsheet size={24} className="text-blue-600" /><span className="font-bold text-corp-800">{file.fileName}</span></div><div className="flex items-center gap-3"><button onClick={() => handleViewFile(file)} className="px-5 py-2.5 bg-corp-900 text-white rounded-lg text-sm font-bold shadow-md">Open File</button><button onClick={() => handleOpenUploadedView(file)} className="p-2.5 text-blue-600 hover:bg-blue-50 border border-blue-100 rounded-lg transition-colors" title="Full Screen View"><Maximize2 size={20} /></button>{isAdmin && <button onClick={(e) => initiateDeleteFile(file.id, e)} className="p-2.5 text-corp-400 hover:text-red-600"><Trash2 size={20} /></button>}</div></div>))}</div></div></div> ); }
-  
-  if (viewMode === 'uploaded_full') {
-    return (
-        <div className="fixed inset-0 bg-gray-50 z-[100] flex flex-col animate-in fade-in duration-300">
-             {/* Fixed Header */}
-             <div className="bg-white px-6 py-4 border-b border-gray-200 shadow-sm flex flex-col md:flex-row justify-between items-center gap-4 shrink-0 z-20">
-                 <div className="flex items-center gap-4">
-                     <button onClick={() => setViewMode('file')} className="p-2 hover:bg-gray-100 rounded-full transition-colors group" title="Exit Full Screen">
-                         <Minimize2 size={24} className="text-gray-500 group-hover:text-corp-900" />
-                     </button>
-                     <div>
-                         <h2 className="text-2xl font-bold text-corp-900 flex items-center gap-2">
-                             <MonitorPlay size={24} className="text-blue-600"/>
-                             Uploaded Data Verification
-                         </h2>
-                         <div className="flex items-center gap-2 text-sm text-gray-500">
-                             <span className="font-semibold text-gray-800">{selectedFile?.fileName}</span>
-                             <span className="px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full text-xs font-bold">View Only Mode</span>
-                         </div>
-                     </div>
-                 </div>
-
-                 <div className="flex items-center gap-3 w-full md:w-auto">
-                      <div className="relative flex-1 md:w-80">
-                          <Search className="absolute left-3 top-2.5 text-gray-400" size={18} />
-                          <input 
-                              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none shadow-sm"
-                              placeholder="Search in uploaded data..."
-                              value={searchTerm}
-                              onChange={e => { setSearchTerm(e.target.value); setCurrentPage(1); }}
-                          />
-                      </div>
-                      <div className="flex gap-2">
-                           <button onClick={handleExportExcel} className="p-2 bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 font-bold text-sm shadow-sm" title="Export Excel">
-                              <FileSpreadsheet size={20} />
-                           </button>
-                           <button onClick={handleExportPDF} className="p-2 bg-red-50 text-red-700 border border-red-200 rounded-lg hover:bg-red-100 font-bold text-sm shadow-sm" title="Export PDF">
-                              <FileText size={20} />
-                           </button>
-                      </div>
-                 </div>
-             </div>
-
-             {/* Full Screen Table */}
-             <div className="flex-1 overflow-auto bg-white p-6 relative">
-                 <div className="min-w-full inline-block align-middle border border-gray-200 rounded-lg shadow-sm">
-                     <table className="min-w-full divide-y divide-gray-200">
-                         <thead className="bg-gray-100 sticky top-0 z-10 shadow-sm">
-                             <tr>
-                                 <th scope="col" className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider sticky left-0 bg-gray-100 z-20 border-r border-gray-200 w-16">
-                                     #
-                                 </th>
-                                 {currentColumns.map((col, idx) => (
-                                     <th key={idx} scope="col" className="px-6 py-4 text-left text-xs font-bold text-gray-500 uppercase tracking-wider whitespace-nowrap border-r border-gray-200 min-w-[150px]">
-                                         {col}
-                                     </th>
-                                 ))}
-                             </tr>
-                         </thead>
-                         <tbody className="bg-white divide-y divide-gray-200">
-                             {paginatedRecords.length > 0 ? (
-                                 paginatedRecords.map((record, index) => {
-                                     const globalIndex = (currentPage - 1) * itemsPerPage + index + 1;
-                                     return (
-                                         <tr key={record.id} className="hover:bg-blue-50/30 transition-colors">
-                                             <td className="px-6 py-4 whitespace-nowrap text-sm font-bold text-gray-900 sticky left-0 bg-white z-10 border-r border-gray-100 shadow-[4px_0_8px_-4px_rgba(0,0,0,0.1)]">
-                                                 {globalIndex}
-                                             </td>
-                                             {currentColumns.map((col, idx) => {
-                                                  // Handling Merged Cells Logic for Full Screen view
-                                                  const { isMerged, rowSpan, colSpan, skip } = getCellMergeProps(globalRowOffset + index, idx, mergedCells);
-                                                  if (skip) return null;
-                                                  
-                                                  return (
-                                                      <td 
-                                                          key={idx} 
-                                                          rowSpan={rowSpan}
-                                                          colSpan={colSpan}
-                                                          className="px-6 py-4 whitespace-nowrap text-sm text-gray-700 border-r border-gray-100 max-w-xs truncate"
-                                                      >
-                                                          {String(record[col] || '')}
-                                                      </td>
-                                                  );
-                                             })}
-                                         </tr>
-                                     );
-                                 })
-                             ) : (
-                                 <tr>
-                                     <td colSpan={currentColumns.length + 1} className="px-6 py-20 text-center text-gray-400">
-                                         <FileText size={48} className="mx-auto mb-4 opacity-20" />
-                                         <p className="text-lg font-medium">No uploaded data found matching your search.</p>
-                                     </td>
-                                 </tr>
-                             )}
-                         </tbody>
-                     </table>
-                 </div>
-             </div>
-
-             {/* Full Screen Pagination Footer */}
-             <div className="bg-white border-t border-gray-200 px-6 py-4 flex items-center justify-between shrink-0 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-20">
-                  <div className="text-sm text-gray-500">
-                      Showing <span className="font-bold text-gray-900">{(currentPage - 1) * itemsPerPage + 1}</span> to <span className="font-bold text-gray-900">{Math.min(currentPage * itemsPerPage, filteredRecords.length)}</span> of <span className="font-bold text-gray-900">{filteredRecords.length}</span> records
-                  </div>
-                  <div className="flex items-center gap-2">
-                      <button 
-                          onClick={() => setCurrentPage(p => Math.max(1, p - 1))} 
-                          disabled={currentPage === 1} 
-                          className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-100 disabled:opacity-50 flex items-center gap-1"
-                      >
-                          <ChevronLeft size={16}/> Previous
-                      </button>
-                      <span className="px-4 py-2 bg-blue-50 text-blue-700 font-bold rounded-lg text-sm border border-blue-100">
-                          Page {currentPage} of {totalPages}
-                      </span>
-                      <button 
-                          onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} 
-                          disabled={currentPage === totalPages} 
-                          className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium hover:bg-gray-100 disabled:opacity-50 flex items-center gap-1"
-                      >
-                          Next <ChevronRight size={16}/>
-                      </button>
-                  </div>
-             </div>
-        </div>
-    );
-  }
+  if (viewMode === 'list') { return ( <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">{toast.show && <div className={`fixed top-24 right-5 z-50 px-6 py-4 rounded-lg shadow-2xl flex items-center gap-3 animate-in slide-in-from-right ${toast.type === 'success' ? 'bg-corp-900 text-white' : 'bg-red-600 text-white'}`}>{toast.message}</div>}{deleteModal.isOpen && deleteModal.type === 'file' && (<div className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4"><div className="bg-white rounded-xl shadow-2xl max-w-sm w-full p-6 text-center"><h3 className="text-xl font-bold mb-2">Delete File?</h3><div className="flex gap-3 mt-4"><button onClick={() => setDeleteModal({ isOpen: false, type: 'file', id: null })} className="flex-1 px-4 py-2 bg-gray-100 rounded-lg">Cancel</button><button onClick={confirmDeleteFile} className="flex-1 px-4 py-2 bg-red-600 text-white rounded-lg">Confirm</button></div></div></div>)}<div className="bg-white p-8 rounded-xl shadow-sm border border-corp-100 flex flex-col md:flex-row items-center gap-8"><div className="flex-1"><h2 className="text-2xl font-bold text-corp-800 flex items-center mb-2"><GitCompare className="mr-3 text-agri-600" size={28} /> {title}</h2><p className="text-corp-500 mb-4">{description}</p>{isAdmin && (<><input type="file" ref={fileInputRef} className="hidden" accept=".xlsx, .xls" onChange={handleBaseUpload} /><button onClick={() => fileInputRef.current?.click()} className="px-6 py-3 bg-corp-900 text-white rounded-lg hover:bg-black font-medium shadow-lg flex items-center" disabled={isLoading}>{isLoading ? <RefreshCw className="animate-spin mr-2"/> : <Upload size={20} className="mr-2" />} {isLoading ? 'Processing...' : 'Upload Base Adangal File'}</button></>)}</div></div><div className="bg-white rounded-xl shadow-sm border border-corp-100 overflow-hidden"><div className="p-5 border-b bg-gray-50"><h3 className="font-bold text-corp-800">Uploaded Base Files</h3></div><div className="divide-y divide-corp-50">{files.length === 0 ? <div className="p-12 text-center text-corp-300">No files yet.</div> : files.map(file => (<div key={file.id} className="p-5 flex flex-col sm:flex-row items-center justify-between hover:bg-blue-50/50 transition-colors group"><div className="flex items-center space-x-4"><FileSpreadsheet size={24} className="text-blue-600" /><span className="font-bold text-corp-800">{file.fileName}</span></div><div className="flex items-center gap-3"><button onClick={() => handleViewFile(file)} className="px-5 py-2.5 bg-corp-900 text-white rounded-lg text-sm font-bold shadow-md flex items-center"><ArrowLeft size={16} className="rotate-180 mr-2" /> Open File</button>{isAdmin && <button onClick={(e) => initiateDeleteFile(file.id, e)} className="p-2.5 text-corp-400 hover:text-red-600"><Trash2 size={20} /></button>}</div></div>))}</div></div></div> ); }
   
   return ( 
-    <div className="flex flex-col h-[calc(100vh-8rem)] animate-in fade-in slide-in-from-right-4">
+    <div className={isFullScreen ? "fixed inset-0 z-[100] bg-white flex flex-col animate-in fade-in zoom-in-95" : "flex flex-col h-[calc(100vh-8rem)] animate-in fade-in slide-in-from-right-4"}>
         {toast.show && (<div className={`fixed top-24 right-5 z-50 px-6 py-4 rounded-lg shadow-2xl flex items-center gap-3 animate-in slide-in-from-right duration-300 ${toast.type === 'success' ? 'bg-corp-900 text-white' : 'bg-red-600 text-white'}`}>{toast.type === 'success' ? <CheckCircle size={20} /> : <AlertTriangle size={20} />}<span className="font-bold">{toast.message}</span></div>)}
         
         {/* Header */}
         <div className="bg-white border-b border-corp-200 px-6 py-4 flex flex-col gap-4 shadow-sm shrink-0">
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
-                    <button onClick={() => setViewMode('list')} className="p-2 hover:bg-gray-100 rounded-full"><ArrowLeft size={20} /></button>
+                    {!isFullScreen && (
+                        <button onClick={() => setViewMode('list')} className="p-2 hover:bg-gray-100 rounded-full"><ArrowLeft size={20} /></button>
+                    )}
                     <div>
                         <h2 className="text-xl font-bold text-corp-900">{selectedFile?.fileName}</h2>
                         <span className="text-xs text-gray-500">Excel View • {records.length} Rows</span>
@@ -479,7 +346,7 @@ export const AdangalComparison: React.FC = () => {
                 
                 {/* Export Buttons */}
                 <div className="flex gap-2">
-                    <button onClick={() => handleOpenUploadedView(selectedFile!)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg border border-blue-200 flex items-center font-bold text-sm" title="Uploaded Data - Full Screen View"><Maximize2 size={16} className="mr-2" /> Full Screen</button>
+                    <button onClick={toggleFullScreen} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg border border-blue-200 flex items-center font-bold text-sm" title={isFullScreen ? "Exit Full Screen" : "Full Screen"}>{isFullScreen ? <Minimize2 size={20} /> : <Maximize2 size={20} />}</button>
                     <button onClick={handleExportExcel} className="flex items-center px-3 py-2 bg-green-50 text-green-700 border border-green-200 rounded-lg hover:bg-green-100 transition-colors text-sm font-bold shadow-sm">
                         <FileSpreadsheet size={18} className="mr-2" /> Excel
                     </button>
@@ -525,7 +392,7 @@ export const AdangalComparison: React.FC = () => {
                 </div>
             </div>
 
-            <div className="flex-1 bg-white border border-corp-200 rounded-xl overflow-hidden shadow-sm relative flex flex-col min-h-0 max-h-[600px]">
+            <div className="flex-1 bg-white border border-corp-200 rounded-xl overflow-hidden shadow-sm relative flex flex-col min-h-0 max-h-[600px] flex-grow">
                 <div className="flex-1 overflow-auto scrollbar-thin scrollbar-thumb-gray-300">
                     <table className="border-collapse w-full text-sm">
                         <thead className="sticky top-0 bg-white z-10 shadow-sm">

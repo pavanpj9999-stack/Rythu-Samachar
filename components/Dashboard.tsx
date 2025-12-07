@@ -2,7 +2,8 @@
 import React, { useEffect, useState } from 'react';
 import { DataService } from '../services/mockDataService';
 import { User, DashboardStats } from '../types';
-import { Sparkles, Database, UserCheck, ArrowRight, FileText } from 'lucide-react';
+import { Database, UserCheck, ArrowRight, FileText } from 'lucide-react';
+import { RythuLogo } from './RythuLogo';
 
 interface DashboardProps {
     user: User;
@@ -42,8 +43,8 @@ export const Dashboard: React.FC<DashboardProps> = ({ user, onNavigate }) => {
               </p>
           </div>
           <div className="hidden md:block">
-              <div className="h-16 w-16 bg-gradient-to-br from-agri-400 to-agri-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-agri-500/30">
-                  <Sparkles size={32} />
+              <div className="h-24 w-48 bg-white rounded-2xl flex items-center justify-center p-2 shadow-sm border border-corp-100">
+                  <RythuLogo className="w-full h-full" />
               </div>
           </div>
       </div>

@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { LogOut, LayoutDashboard, Database, Users, Menu, X, FileText, Spline, GitCompare, UserCheck, Shield, ChevronRight, Upload, Trash2, Lock, Camera } from 'lucide-react';
 import { User, UserRole } from '../types';
-import { DataService } from '../services/mockDataService';
+import { RythuLogo } from './RythuLogo';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -15,27 +15,13 @@ interface LayoutProps {
 export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, activeTab, setActiveTab }) => {
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [appLogo, setAppLogo] = useState<string>('/ryathu.jpg');
-
+  
   // Live Clock Effect (Updates every second)
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentTime(new Date());
     }, 1000);
     return () => clearInterval(timer);
-  }, []);
-
-  // Load Logo
-  useEffect(() => {
-      const loadLogo = () => {
-          const config = DataService.getAppConfig();
-          setAppLogo(config.logo);
-      };
-      loadLogo();
-
-      // Listen for updates
-      window.addEventListener('appConfigUpdated', loadLogo);
-      return () => window.removeEventListener('appConfigUpdated', loadLogo);
   }, []);
 
   // Format Time for India (IST)
@@ -64,6 +50,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, active
     { id: 'comparison', label: 'Adangal Comparison', icon: <GitCompare size={20} /> },
     { id: '6a-data', label: '6A Data', icon: <Database size={20} /> },
     { id: 'rythu-details', label: 'Rythu Details', icon: <UserCheck size={20} /> },
+    { id: 'dkt-land-details', label: 'DKT Land Details', icon: <FileText size={20} /> },
   ];
 
   // Add Admin Panel and Recycle Bin if User is Admin
@@ -82,22 +69,14 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, active
           isSidebarOpen ? 'w-72' : 'w-20'
         } bg-corp-900 text-white transition-all duration-300 flex flex-col shadow-2xl z-30`}
       >
-        <div className="p-5 flex items-center justify-between border-b border-corp-800 h-20 bg-corp-900">
+        <div className="p-4 flex items-center justify-between border-b border-corp-800 h-28 bg-corp-900">
           {isSidebarOpen ? (
-            <div className="flex items-center gap-3">
-                <img 
-                  src={appLogo} 
-                  alt="Rythu Samachar" 
-                  className="h-10 w-auto object-contain rounded bg-white p-0.5" 
-                />
-                <div className="flex flex-col">
-                    <h1 className="font-bold text-lg tracking-wide text-white leading-tight">Rythu Samachar</h1>
-                    <p className="text-[9px] text-corp-400 uppercase tracking-widest">Portal v2.0</p>
-                </div>
+            <div className="flex items-center justify-start w-full overflow-hidden">
+                <RythuLogo className="h-[80px] w-auto" />
             </div>
           ) : (
-             <div className="w-10 h-10 rounded-lg bg-white flex items-center justify-center overflow-hidden p-0.5">
-                <img src={appLogo} alt="RS" className="w-full h-full object-contain" />
+             <div className="w-12 h-12 flex items-center justify-center overflow-hidden">
+                <RythuLogo className="w-full h-full" />
              </div>
           )}
           <button onClick={() => setIsSidebarOpen(!isSidebarOpen)} className="p-1.5 hover:bg-corp-800 rounded-lg text-corp-400 hover:text-white transition-colors">

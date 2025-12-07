@@ -4,7 +4,7 @@ export enum UserRole {
   USER = 'USER'
 }
 
-export type ModuleType = 'AREGISTER' | 'DATA_6A' | 'RYTHU_DETAILS' | 'GENERIC' | 'ADANGAL' | 'ATTENDANCE';
+export type ModuleType = 'AREGISTER' | 'DATA_6A' | 'RYTHU_DETAILS' | 'GENERIC' | 'ADANGAL' | 'ATTENDANCE' | 'DKT_LAND';
 
 export interface User {
   id: string;
