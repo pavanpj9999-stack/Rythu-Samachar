@@ -1,8 +1,7 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { AuthService, DataService } from '../services/mockDataService';
 import { User, UserRole } from '../types';
-import { UserPlus, Trash2, Shield, Mail, Phone, Search, Users, ToggleLeft, ToggleRight, Eye, Calendar, Clock, Lock, CheckCircle, XCircle, X, FileSpreadsheet, FileText, RotateCcw } from 'lucide-react';
+import { UserPlus, Trash2, Shield, Mail, Phone, Search, Users, ToggleLeft, ToggleRight, Eye, Calendar, Clock, Lock, CheckCircle, XCircle, X, FileSpreadsheet, FileText, RotateCcw, Database, Upload, Download, AlertTriangle, Loader2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -22,6 +21,10 @@ export const AdminDashboard: React.FC = () => {
   
   // View Profile State
   const [viewUser, setViewUser] = useState<User | null>(null);
+
+  // Backup/Restore State
+  const [isBackupLoading, setIsBackupLoading] = useState(false);
+  const restoreInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadUsers();
@@ -46,7 +49,6 @@ export const AdminDashboard: React.FC = () => {
           setIsAddMode(false);
           setNewName(''); setNewEmail(''); setNewMobile(''); setNewPassword('');
           loadUsers();
-          // Auto clear success message
           setTimeout(() => setSuccess(''), 3000);
       } else {
           setError(result.message);
@@ -78,6 +80,60 @@ export const AdminDashboard: React.FC = () => {
       }
   };
 
+  // --- SYSTEM BACKUP / RESTORE HANDLERS ---
+  const handleBackup = async () => {
+      setIsBackupLoading(true);
+      try {
+          const jsonString = await DataService.exportDatabase();
+          const blob = new Blob([jsonString], { type: "application/json" });
+          const url = URL.createObjectURL(blob);
+          
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = `rythu_backup_${new Date().toISOString().split('T')[0]}.json`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          
+          setSuccess("System backup created successfully.");
+      } catch (e) {
+          console.error(e);
+          setError("Failed to create backup.");
+      } finally {
+          setIsBackupLoading(false);
+          setTimeout(() => setSuccess(''), 3000);
+      }
+  };
+
+  const handleRestoreSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      if (!window.confirm("WARNING: Restoring data will OVERWRITE all current data on this device. Do you want to proceed?")) {
+          if (restoreInputRef.current) restoreInputRef.current.value = '';
+          return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = async (evt) => {
+          const content = evt.target?.result as string;
+          if (content) {
+              setIsBackupLoading(true);
+              const success = await DataService.importDatabase(content);
+              setIsBackupLoading(false);
+              
+              if (success) {
+                  alert("System Restored Successfully. The page will reload.");
+                  window.location.reload();
+              } else {
+                  setError("Failed to restore system data. Invalid file format.");
+              }
+          }
+      };
+      reader.readAsText(file);
+  };
+
   const filteredUsers = users.filter(u => 
       u.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
       u.email.toLowerCase().includes(searchTerm.toLowerCase())
@@ -103,11 +159,8 @@ export const AdminDashboard: React.FC = () => {
 
   const handleExportPDF = () => {
     const doc = new jsPDF();
-    
-    // Header
     doc.setFontSize(16);
     doc.text("Staff Users Report", 14, 15);
-    
     doc.setFontSize(10);
     doc.text(`Generated on: ${new Date().toLocaleString()}`, 14, 22);
     doc.text(`Total Staff: ${filteredUsers.length}`, 14, 27);
@@ -128,8 +181,8 @@ export const AdminDashboard: React.FC = () => {
       body: tableRows,
       startY: 35,
       styles: { fontSize: 8 },
-      headStyles: { fillColor: [22, 163, 74] }, // tailwind green-600 #16a34a
-      alternateRowStyles: { fillColor: [240, 253, 244] } // tailwind green-50
+      headStyles: { fillColor: [22, 163, 74] },
+      alternateRowStyles: { fillColor: [240, 253, 244] }
     });
 
     doc.save("Staff_Users_Report.pdf");
@@ -172,6 +225,48 @@ export const AdminDashboard: React.FC = () => {
               <span className="font-medium">{success || error}</span>
           </div>
       )}
+
+      {/* 3. SYSTEM MAINTENANCE (BACKUP/RESTORE) */}
+      <div className="bg-gray-900 text-white p-6 rounded-xl shadow-lg border border-gray-800 flex flex-col md:flex-row items-center justify-between gap-6">
+          <div className="flex items-center gap-4">
+              <div className="p-3 bg-gray-800 rounded-full border border-gray-700">
+                  <Database size={24} className="text-blue-400" />
+              </div>
+              <div>
+                  <h3 className="text-lg font-bold text-white">System Data Maintenance</h3>
+                  <p className="text-sm text-gray-400">Transfer data between devices using Backup & Restore.</p>
+              </div>
+          </div>
+          
+          <div className="flex gap-4 w-full md:w-auto">
+              <button 
+                  onClick={handleBackup} 
+                  disabled={isBackupLoading}
+                  className="flex-1 md:flex-none px-6 py-3 bg-blue-600 hover:bg-blue-700 rounded-lg font-bold text-sm shadow-lg shadow-blue-900/30 flex items-center justify-center transition-all disabled:opacity-50"
+              >
+                  {isBackupLoading ? <Loader2 className="animate-spin mr-2"/> : <Download size={18} className="mr-2" />} 
+                  Backup Data
+              </button>
+              
+              <div className="relative flex-1 md:flex-none">
+                  <input 
+                      type="file" 
+                      accept=".json" 
+                      className="hidden" 
+                      ref={restoreInputRef}
+                      onChange={handleRestoreSelect}
+                  />
+                  <button 
+                      onClick={() => restoreInputRef.current?.click()}
+                      disabled={isBackupLoading}
+                      className="w-full h-full px-6 py-3 bg-gray-800 hover:bg-gray-700 border border-gray-600 rounded-lg font-bold text-sm flex items-center justify-center transition-all disabled:opacity-50"
+                  >
+                      {isBackupLoading ? <Loader2 className="animate-spin mr-2"/> : <Upload size={18} className="mr-2" />}
+                      Restore Data
+                  </button>
+              </div>
+          </div>
+      </div>
 
       {/* 4. ADD STAFF FORM */}
       {isAddMode && (

@@ -1,5 +1,3 @@
-
-
 import { User, UserRole, DashboardStats, FMBRecord, KMLRecord, ARegisterFile, RecycleBinRecord, DynamicRecord, ModuleType, ARegisterSummary, AttendanceRecord } from '../types';
 
 // --- INDEXED DB HELPER ---
@@ -188,6 +186,55 @@ export const DataService = {
       localStorage.setItem(KEYS.APP_CONFIG, JSON.stringify(config));
       window.dispatchEvent(new Event('appConfigUpdated'));
       return { success: true };
+  },
+
+  // --- BACKUP & RESTORE SYSTEM ---
+  exportDatabase: async (): Promise<string> => {
+      const db = await openDB();
+      const exportData: any = {};
+      const storeNames = Array.from(db.objectStoreNames);
+      
+      for (const storeName of storeNames) {
+          exportData[storeName] = await dbGetAll(storeName);
+      }
+      
+      // Also include LocalStorage Users/Config
+      exportData['localStorage_users'] = localStorage.getItem(KEYS.USERS);
+      exportData['localStorage_config'] = localStorage.getItem(KEYS.APP_CONFIG);
+      
+      return JSON.stringify(exportData);
+  },
+
+  importDatabase: async (jsonString: string): Promise<boolean> => {
+      try {
+          const data = JSON.parse(jsonString);
+          const db = await openDB();
+          
+          // Restore IndexedDB Stores
+          const tx = db.transaction(db.objectStoreNames, 'readwrite');
+          
+          for (const storeName of Array.from(db.objectStoreNames)) {
+              if (data[storeName]) {
+                  const store = tx.objectStore(storeName);
+                  await store.clear();
+                  for (const item of data[storeName]) {
+                      await store.put(item);
+                  }
+              }
+          }
+          
+          // Restore LocalStorage
+          if (data['localStorage_users']) localStorage.setItem(KEYS.USERS, data['localStorage_users']);
+          if (data['localStorage_config']) localStorage.setItem(KEYS.APP_CONFIG, data['localStorage_config']);
+          
+          return new Promise((resolve) => {
+              tx.oncomplete = () => resolve(true);
+              tx.onerror = () => resolve(false);
+          });
+      } catch (e) {
+          console.error("Import failed", e);
+          return false;
+      }
   },
 
   // --- MODULE HANDLERS (Async / IndexedDB) ---
