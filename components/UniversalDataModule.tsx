@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { DataService } from '../services/mockDataService';
 import { ARegisterFile, DynamicRecord, ModuleType, UserRole, ARegisterSummary } from '../types';
@@ -12,6 +11,142 @@ interface UniversalDataModuleProps {
     title: string;
     description: string;
 }
+
+// --- HELPERS ---
+
+const extractDispImgId = (val: any): string | null => {
+    if (!val || typeof val !== 'string') return null;
+    const match = val.match(/=DISPIMG\("([^"]+)"/i);
+    return match ? match[1] : null;
+};
+
+const getFileType = (url: string): 'image' | 'pdf' | 'doc' | 'none' => {
+    if (!url) return 'none';
+    const lower = url.toLowerCase();
+    if (lower.startsWith('data:application/pdf') || lower.endsWith('.pdf')) return 'pdf';
+    if (lower.startsWith('data:image') || /\.(jpg|jpeg|png|gif|webp|svg)$/.test(lower)) return 'image';
+    if (lower.includes('word') || lower.endsWith('.doc') || lower.endsWith('.docx') || lower.endsWith('.txt')) return 'doc';
+    return 'image'; // Default fallback
+};
+
+const parseExtent = (val: any) => {
+    if (!val) return 0;
+    const str = String(val).replace(/,/g, ''); 
+    const match = str.match(/[\d.]+/); 
+    return match ? parseFloat(match[0]) : 0;
+};
+
+// --- MEDIA CELL COMPONENT ---
+const MediaCell = ({ url, isEditable, onUpload, onClick }: { url: string | null, isEditable: boolean, onUpload: (e: any) => void, onClick: () => void }) => {
+    const type = getFileType(url || '');
+    
+    return (
+        <div className="flex justify-center items-center h-full">
+            {isEditable ? (
+                <label className={`cursor-pointer border border-gray-200 hover:border-blue-400 rounded-lg p-1 block text-center shadow-sm relative group overflow-hidden transition-all ${url ? 'bg-white' : 'bg-gray-50 hover:bg-white'}`} style={{ width: '60px', height: '60px' }}>
+                    {url ? (
+                        <>
+                            {type === 'pdf' ? (
+                                <div className="w-full h-full flex flex-col items-center justify-center bg-red-50 text-red-500">
+                                    <FileText size={24} />
+                                    <span className="text-[8px] font-bold uppercase">PDF</span>
+                                </div>
+                            ) : type === 'doc' ? (
+                                <div className="w-full h-full flex flex-col items-center justify-center bg-blue-50 text-blue-500">
+                                    <File size={24} />
+                                    <span className="text-[8px] font-bold uppercase">DOC</span>
+                                </div>
+                            ) : (
+                                <img src={url} className="w-full h-full object-cover rounded" alt="Thumb" />
+                            )}
+                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                <Edit size={16} className="text-white" />
+                            </div>
+                        </>
+                    ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 hover:text-blue-500">
+                            <Plus size={18} />
+                            <span className="text-[8px] font-bold mt-1">Add</span>
+                        </div>
+                    )}
+                    <input type="file" accept="image/*,.pdf,.doc,.docx" className="hidden" onChange={onUpload} />
+                </label>
+            ) : (
+                url ? (
+                    <button onClick={onClick} className="relative group w-[60px] h-[60px] rounded-lg border border-gray-200 overflow-hidden shadow-sm bg-white hover:ring-2 hover:ring-blue-400 transition-all">
+                         {type === 'pdf' ? (
+                            <div className="w-full h-full flex flex-col items-center justify-center bg-red-50 text-red-500">
+                                <FileText size={24} />
+                                <span className="text-[8px] font-bold uppercase mt-1">PDF</span>
+                            </div>
+                         ) : type === 'doc' ? (
+                            <div className="w-full h-full flex flex-col items-center justify-center bg-blue-50 text-blue-500">
+                                <File size={24} />
+                                <span className="text-[8px] font-bold uppercase mt-1">DOC</span>
+                            </div>
+                         ) : (
+                            <img src={url} className="w-full h-full object-cover" alt="Thumbnail" />
+                         )}
+                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
+                            <Eye size={16} className="text-white opacity-0 group-hover:opacity-100 drop-shadow-md" />
+                         </div>
+                    </button>
+                ) : (
+                    <div className="w-[60px] h-[60px] rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center text-gray-300">
+                        <ImageIcon size={20} />
+                    </div>
+                )
+            )}
+        </div>
+    );
+};
+
+// --- RYTHU PHOTO ONLY CELL ---
+const PhotoCell = ({ url, isEditable, onUpload, onClick }: { url: string | null, isEditable: boolean, onUpload: (e: any) => void, onClick: () => void }) => {
+    // Logic to resolve image source
+    let src = url;
+    const dispId = extractDispImgId(url);
+    if (dispId) src = `/uploads/${dispId}.jpg`; // Placeholder logic
+
+    const type = getFileType(src || '');
+    const isImage = type === 'image' && src;
+    
+    return (
+        <div className="flex justify-center items-center h-full">
+            {isEditable ? (
+                <label className={`cursor-pointer border border-gray-200 hover:border-pink-400 rounded-lg p-1 block text-center shadow-sm relative group overflow-hidden transition-all ${isImage ? 'bg-white' : 'bg-gray-50 hover:bg-white'}`} style={{ width: '60px', height: '60px' }}>
+                    {isImage ? (
+                        <>
+                            <img src={src || ''} className="w-full h-full object-cover rounded" alt="Thumb" />
+                            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                                <Edit size={16} className="text-white" />
+                            </div>
+                        </>
+                    ) : (
+                        <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 hover:text-pink-500">
+                            <Plus size={18} />
+                            <span className="text-[8px] font-bold mt-1">Photo</span>
+                        </div>
+                    )}
+                    <input type="file" accept="image/*" className="hidden" onChange={onUpload} />
+                </label>
+            ) : (
+                isImage ? (
+                    <button onClick={onClick} className="relative group w-[60px] h-[60px] rounded-lg border border-gray-200 overflow-hidden shadow-sm bg-white hover:ring-2 hover:ring-pink-400 transition-all">
+                         <img src={src || ''} className="w-full h-full object-cover" alt="Farmer" />
+                         <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
+                            <Eye size={16} className="text-white opacity-0 group-hover:opacity-100 drop-shadow-md" />
+                         </div>
+                    </button>
+                ) : (
+                    <div className="w-[60px] h-[60px] rounded-full bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-300 mx-auto">
+                        <UserIcon size={24} />
+                    </div>
+                )
+            )}
+        </div>
+    );
+};
 
 export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ moduleType, title, description }) => {
   const [viewMode, setViewMode] = useState<'list' | 'file' | 'addRows'>('list');
@@ -138,22 +273,6 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
       setToast({ show: true, message, type });
   };
 
-  // Helper to extract ID from DISPIMG formula
-  const extractDispImgId = (val: any): string | null => {
-    if (!val || typeof val !== 'string') return null;
-    const match = val.match(/=DISPIMG\("([^"]+)"/i);
-    return match ? match[1] : null;
-  };
-
-  const getFileType = (url: string): 'image' | 'pdf' | 'doc' | 'none' => {
-      if (!url) return 'none';
-      const lower = url.toLowerCase();
-      if (lower.startsWith('data:application/pdf') || lower.endsWith('.pdf')) return 'pdf';
-      if (lower.startsWith('data:image') || /\.(jpg|jpeg|png|gif|webp|svg)$/.test(lower)) return 'image';
-      if (lower.includes('word') || lower.endsWith('.doc') || lower.endsWith('.docx') || lower.endsWith('.txt')) return 'doc';
-      return 'image'; // Default fallback
-  };
-
   const isMediaColumn = (colName: string) => {
       // Allow Rythu Details AND Data 6A to have dynamic media columns
       if (!isRythuDetails && !isData6A) return false;
@@ -161,21 +280,6 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
       return ['photo', 'image', 'url', 'link', 'ఫోటో', 'document', 'file', 'pattadar passbook', 'passbook'].some(k => lower.includes(k));
   };
   
-  const getMediaAcceptType = (colName: string) => {
-      const lower = colName.toLowerCase();
-      if (lower.includes('photo') || lower.includes('image') || lower.includes('ఫోటో')) {
-          return "image/*";
-      }
-      return "image/*,.pdf,.doc,.docx";
-  };
-  
-  const parseExtent = (val: any) => {
-        if (!val) return 0;
-        const str = String(val).replace(/,/g, ''); 
-        const match = str.match(/[\d.]+/); 
-        return match ? parseFloat(match[0]) : 0;
-  };
-
   const recalculateStats = () => {
     if (!selectedFile) return;
     const sourceData = records;
@@ -543,6 +647,20 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
     showToast("New row added.");
   };
 
+  const calculateRowTotalExtent = (record: DynamicRecord, columns: string[]) => {
+    let total = 0;
+    const keywords = Object.values(EXTENT_KEYWORDS).flat();
+    Object.keys(record).forEach(key => {
+        // Skip metadata and Total Extent itself
+        if (key === 'Total Extent') return;
+
+        if (keywords.some(k => key.toLowerCase().includes(k.toLowerCase()))) {
+             total += parseExtent(record[key]);
+        }
+    });
+    return total;
+  };
+
   const handleEditChange = (col: string, value: string) => { 
       if (editFormData) { 
           const updated = { ...editFormData, [col]: value };
@@ -627,20 +745,6 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
   const initiateDeleteRow = (id: string) => {
       if (!canDelete) { showToast("Access Denied: Admin Only", "error"); return; }
       setDeleteModal({ isOpen: true, type: 'row', id: id });
-  };
-
-  const calculateRowTotalExtent = (record: DynamicRecord, columns: string[]) => {
-    let total = 0;
-    const keywords = Object.values(EXTENT_KEYWORDS).flat();
-    Object.keys(record).forEach(key => {
-        // Skip metadata and Total Extent itself
-        if (key === 'Total Extent') return;
-
-        if (keywords.some(k => key.toLowerCase().includes(k.toLowerCase()))) {
-             total += parseExtent(record[key]);
-        }
-    });
-    return total;
   };
 
   const handleExportExcel = () => {
@@ -798,118 +902,6 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
         l = i;
     }
     return rangeWithDots;
-  };
-
-  // --- MEDIA CELL COMPONENT ---
-  const MediaCell = ({ url, isEditable, onUpload, onClick }: { url: string | null, isEditable: boolean, onUpload: (e: any) => void, onClick: () => void }) => {
-      const type = getFileType(url || '');
-      
-      return (
-          <div className="flex justify-center items-center h-full">
-              {isEditable ? (
-                  <label className={`cursor-pointer border border-gray-200 hover:border-blue-400 rounded-lg p-1 block text-center shadow-sm relative group overflow-hidden transition-all ${url ? 'bg-white' : 'bg-gray-50 hover:bg-white'}`} style={{ width: '60px', height: '60px' }}>
-                      {url ? (
-                          <>
-                              {type === 'pdf' ? (
-                                  <div className="w-full h-full flex flex-col items-center justify-center bg-red-50 text-red-500">
-                                      <FileText size={24} />
-                                      <span className="text-[8px] font-bold uppercase">PDF</span>
-                                  </div>
-                              ) : type === 'doc' ? (
-                                  <div className="w-full h-full flex flex-col items-center justify-center bg-blue-50 text-blue-500">
-                                      <File size={24} />
-                                      <span className="text-[8px] font-bold uppercase">DOC</span>
-                                  </div>
-                              ) : (
-                                  <img src={url} className="w-full h-full object-cover rounded" alt="Thumb" />
-                              )}
-                              <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <Edit size={16} className="text-white" />
-                              </div>
-                          </>
-                      ) : (
-                          <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 hover:text-blue-500">
-                              <Plus size={18} />
-                              <span className="text-[8px] font-bold mt-1">Add</span>
-                          </div>
-                      )}
-                      <input type="file" accept={getMediaAcceptType('media')} className="hidden" onChange={onUpload} />
-                  </label>
-              ) : (
-                  url ? (
-                      <button onClick={onClick} className="relative group w-[60px] h-[60px] rounded-lg border border-gray-200 overflow-hidden shadow-sm bg-white hover:ring-2 hover:ring-blue-400 transition-all">
-                           {type === 'pdf' ? (
-                              <div className="w-full h-full flex flex-col items-center justify-center bg-red-50 text-red-500">
-                                  <FileText size={24} />
-                                  <span className="text-[8px] font-bold uppercase mt-1">PDF</span>
-                              </div>
-                           ) : type === 'doc' ? (
-                              <div className="w-full h-full flex flex-col items-center justify-center bg-blue-50 text-blue-500">
-                                  <File size={24} />
-                                  <span className="text-[8px] font-bold uppercase mt-1">DOC</span>
-                              </div>
-                           ) : (
-                              <img src={url} className="w-full h-full object-cover" alt="Thumbnail" />
-                           )}
-                           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
-                              <Eye size={16} className="text-white opacity-0 group-hover:opacity-100 drop-shadow-md" />
-                           </div>
-                      </button>
-                  ) : (
-                      <div className="w-[60px] h-[60px] rounded-lg bg-gray-50 border border-gray-100 flex items-center justify-center text-gray-300">
-                          <ImageIcon size={20} />
-                      </div>
-                  )
-              )}
-          </div>
-      );
-  };
-
-  // --- RYTHU PHOTO ONLY CELL ---
-  const PhotoCell = ({ url, isEditable, onUpload, onClick }: { url: string | null, isEditable: boolean, onUpload: (e: any) => void, onClick: () => void }) => {
-      // Logic to resolve image source
-      let src = url;
-      const dispId = extractDispImgId(url);
-      if (dispId) src = `/uploads/${dispId}.jpg`; // Placeholder logic
-
-      const type = getFileType(src || '');
-      const isImage = type === 'image' && src;
-      
-      return (
-          <div className="flex justify-center items-center h-full">
-              {isEditable ? (
-                  <label className={`cursor-pointer border border-gray-200 hover:border-pink-400 rounded-lg p-1 block text-center shadow-sm relative group overflow-hidden transition-all ${isImage ? 'bg-white' : 'bg-gray-50 hover:bg-white'}`} style={{ width: '60px', height: '60px' }}>
-                      {isImage ? (
-                          <>
-                              <img src={src || ''} className="w-full h-full object-cover rounded" alt="Thumb" />
-                              <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                                  <Edit size={16} className="text-white" />
-                              </div>
-                          </>
-                      ) : (
-                          <div className="w-full h-full flex flex-col items-center justify-center text-gray-400 hover:text-pink-500">
-                              <Plus size={18} />
-                              <span className="text-[8px] font-bold mt-1">Photo</span>
-                          </div>
-                      )}
-                      <input type="file" accept="image/*" className="hidden" onChange={onUpload} />
-                  </label>
-              ) : (
-                  isImage ? (
-                      <button onClick={onClick} className="relative group w-[60px] h-[60px] rounded-lg border border-gray-200 overflow-hidden shadow-sm bg-white hover:ring-2 hover:ring-pink-400 transition-all">
-                           <img src={src || ''} className="w-full h-full object-cover" alt="Farmer" />
-                           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors flex items-center justify-center">
-                              <Eye size={16} className="text-white opacity-0 group-hover:opacity-100 drop-shadow-md" />
-                           </div>
-                      </button>
-                  ) : (
-                      <div className="w-[60px] h-[60px] rounded-full bg-gray-100 border border-gray-200 flex items-center justify-center text-gray-300 mx-auto">
-                          <UserIcon size={24} />
-                      </div>
-                  )
-              )}
-          </div>
-      );
   };
 
   return (
