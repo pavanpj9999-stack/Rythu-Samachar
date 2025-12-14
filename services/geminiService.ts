@@ -1,4 +1,4 @@
-import { GoogleGenAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 import { FarmerRecord } from '../types';
 
 export const generateDataAnalysis = async (data: FarmerRecord[]) => {

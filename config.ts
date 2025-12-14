@@ -1,0 +1,1 @@
+export const API_BASE = "https://rythu-samachar-146621951460.us-west1.run.app";

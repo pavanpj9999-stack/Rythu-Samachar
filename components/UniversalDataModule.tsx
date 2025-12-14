@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
+import axios from 'axios';
+import { API_BASE } from '../config';
 import { DataService } from '../services/mockDataService';
 import { ARegisterFile, DynamicRecord, ModuleType, UserRole, ARegisterSummary } from '../types';
-import { Search, Trash2, Edit, FileSpreadsheet, Upload, ArrowLeft, Save, Image as ImageIcon, Plus, Columns, CheckCircle, X, FileText, ChevronLeft, ChevronRight, BarChart3, RefreshCw, PlusCircle, RotateCcw, File, AlertTriangle, Eye, Download, User as UserIcon, MonitorPlay, Maximize2, Minimize2, Eraser, Loader2 } from 'lucide-react';
+import { Search, Trash2, Edit, FileSpreadsheet, Upload, ArrowLeft, Save, Image as ImageIcon, Plus, Columns, CheckCircle, X, FileText, ChevronLeft, ChevronRight, BarChart3, RefreshCw, PlusCircle, RotateCcw, File, AlertTriangle, Eye, Download, User as UserIcon, MonitorPlay, Maximize2, Minimize2, Eraser, Loader2, Cloud, CloudOff } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -171,6 +173,7 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
   const [deleteModal, setDeleteModal] = useState<{ isOpen: boolean, type: 'row' | 'file', id: string | null }>({ isOpen: false, type: 'row', id: null });
   const [toast, setToast] = useState<{ show: boolean, message: string, type: 'success' | 'error' }>({ show: false, message: '', type: 'success' });
   const [isLoading, setIsLoading] = useState(false);
+  const [apiError, setApiError] = useState(false);
   
   // Add Data - File Selection State
   const [selectedUploadFile, setSelectedUploadFile] = useState<File | null>(null);
@@ -241,7 +244,37 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
 
   useEffect(() => {
     loadFiles();
+    fetchCloudData(); // Attempt cloud fetch on load
   }, [moduleType]);
+
+  const fetchCloudData = async () => {
+      try {
+          // Attempt to fetch from API
+          const res = await axios.get(`${API_BASE}/${moduleType.toLowerCase()}`);
+          if (res.data && Array.isArray(res.data) && res.data.length > 0) {
+              // Create a virtual file for API data
+              const cloudFile: ARegisterFile = {
+                  id: 'cloud_data',
+                  fileName: 'Cloud Database (API)',
+                  uploadDate: new Date().toLocaleDateString(),
+                  rowCount: res.data.length,
+                  columns: Object.keys(res.data[0]),
+                  module: moduleType
+              };
+              // Add to files list or auto-select if preferred
+              setFiles(prev => {
+                  if (prev.some(f => f.id === 'cloud_data')) return prev;
+                  return [cloudFile, ...prev];
+              });
+              
+              // Optionally populate records immediately if needed, but user logic expects file selection
+              setApiError(false);
+          }
+      } catch (err) {
+          console.warn("API Connection failed or no data:", err);
+          setApiError(true);
+      }
+  };
 
   useEffect(() => {
       const loadSummary = async () => {
@@ -266,7 +299,11 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
 
   const loadFiles = async () => {
     const loadedFiles = await DataService.getModuleFiles(moduleType);
-    setFiles(loadedFiles);
+    setFiles(prev => {
+        // Keep Cloud file if it exists in state
+        const cloud = prev.find(f => f.id === 'cloud_data');
+        return cloud ? [cloud, ...loadedFiles] : loadedFiles;
+    });
   };
 
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
@@ -411,6 +448,13 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
               return record;
           });
 
+          // Upload to API if online
+          if (!apiError) {
+              axios.post(`${API_BASE}/upload${moduleType.toLowerCase()}`, { records: newRecords, timestamp: new Date().toISOString() })
+                  .then(() => showToast("Data synced to cloud successfully"))
+                  .catch(e => console.error("Cloud sync failed", e));
+          }
+
           await DataService.saveModuleFile(moduleType, newFile);
           await DataService.saveModuleRecords(moduleType, newRecords);
           showToast(`Uploaded ${dataRows.length} rows successfully!`);
@@ -463,8 +507,31 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
 
   const handleViewFile = async (file: ARegisterFile) => {
       setSelectedFile(file);
+      
+      let fileRecords: DynamicRecord[] = [];
+      
+      // Handle Cloud File fetch
+      if (file.id === 'cloud_data') {
+          try {
+              setIsLoading(true);
+              const res = await axios.get(`${API_BASE}/${moduleType.toLowerCase()}`);
+              fileRecords = res.data;
+              if (fileRecords.length > 0 && !file.columns) {
+                  // Infer columns if missing
+                  file.columns = Object.keys(fileRecords[0]);
+              }
+          } catch (e) {
+              console.error("Failed to fetch cloud records", e);
+              showToast("Failed to fetch cloud data", "error");
+          } finally {
+              setIsLoading(false);
+          }
+      } else {
+          fileRecords = await DataService.getModuleRecords(moduleType, file.id);
+      }
+
       setCurrentColumns(file.columns || []);
-      const fileRecords = await DataService.getModuleRecords(moduleType, file.id);
+      
       fileRecords.sort((a, b) => a.id.localeCompare(b.id));
       setRecords(fileRecords);
       setEditingId(null);
@@ -542,7 +609,9 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
       const newCols = [...currentColumns, formattedName];
       setCurrentColumns(newCols);
       if (selectedFile) {
-         await DataService.updateModuleFileColumns(moduleType, selectedFile.id, newCols);
+         if (selectedFile.id !== 'cloud_data') {
+             await DataService.updateModuleFileColumns(moduleType, selectedFile.id, newCols);
+         }
          const updatedFile = { ...selectedFile, columns: newCols };
          setSelectedFile(updatedFile);
       }
@@ -967,7 +1036,9 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
                                            {files.map(file => (
                                               <div key={file.id} className="p-5 flex flex-col sm:flex-row items-center justify-between bg-gray-50 hover:bg-blue-50 border border-gray-200 rounded-xl transition-all group shadow-sm hover:shadow-md">
                                                   <div className="flex items-center space-x-4 mb-3 sm:mb-0 w-full sm:w-auto">
-                                                      <div className="p-3 bg-white rounded-lg text-blue-600 shadow-sm"><FileSpreadsheet size={24} /></div>
+                                                      <div className="p-3 bg-white rounded-lg text-blue-600 shadow-sm">
+                                                          {file.id === 'cloud_data' ? <Cloud size={24} /> : <FileSpreadsheet size={24} />}
+                                                      </div>
                                                       <div>
                                                           <p className="font-bold text-corp-800 text-lg group-hover:text-blue-700">{file.fileName}</p>
                                                           <p className="text-xs text-corp-400 font-medium mt-0.5">Uploaded: {file.uploadDate} • <span className="bg-white px-2 py-0.5 rounded text-corp-600 border border-gray-100">{file.rowCount} Records</span></p>
@@ -977,7 +1048,7 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
                                                       <button onClick={() => handleViewFile(file)} className="px-5 py-2.5 bg-corp-900 text-white rounded-lg text-sm font-bold hover:bg-corp-800 shadow-md flex items-center transition-all">
                                                           <ArrowLeft size={16} className="rotate-180 mr-2" /> Open
                                                       </button>
-                                                      {canDelete && <button onClick={(e) => initiateDeleteFile(file.id, e)} className="p-2.5 text-corp-400 bg-white hover:text-red-600 hover:bg-red-50 border border-gray-100 rounded-lg transition-colors shadow-sm" title="Move to Recycle Bin"><Trash2 size={20} /></button>}
+                                                      {canDelete && file.id !== 'cloud_data' && <button onClick={(e) => initiateDeleteFile(file.id, e)} className="p-2.5 text-corp-400 bg-white hover:text-red-600 hover:bg-red-50 border border-gray-100 rounded-lg transition-colors shadow-sm" title="Move to Recycle Bin"><Trash2 size={20} /></button>}
                                                   </div>
                                               </div>
                                            ))}
@@ -1061,7 +1132,10 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
                     <div className="bg-white rounded-xl shadow-sm border border-corp-100 overflow-hidden">
                         <div className="p-5 border-b border-corp-100 bg-gray-50 flex justify-between items-center">
                             <h3 className="font-bold text-corp-800">Recent Uploads</h3>
-                            <button onClick={loadFiles} className="text-sm text-agri-600 font-medium hover:underline">Refresh List</button>
+                            <div className="flex items-center gap-2">
+                                {apiError && <span className="text-xs text-red-500 flex items-center"><CloudOff size={14} className="mr-1"/> Offline</span>}
+                                <button onClick={() => { fetchCloudData(); loadFiles(); }} className="text-sm text-agri-600 font-medium hover:underline">Refresh List</button>
+                            </div>
                         </div>
                         <div className="divide-y divide-corp-50">
                             {files.length === 0 ? (
@@ -1070,7 +1144,9 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
                                 files.map(file => (
                                     <div key={file.id} className="p-5 flex flex-col sm:flex-row items-center justify-between hover:bg-blue-50/50 transition-colors group">
                                         <div className="flex items-center space-x-4 mb-3 sm:mb-0 w-full sm:w-auto">
-                                            <div className="p-3 bg-blue-100 rounded-lg text-blue-600"><FileSpreadsheet size={24} /></div>
+                                            <div className="p-3 bg-blue-100 rounded-lg text-blue-600">
+                                                {file.id === 'cloud_data' ? <Cloud size={24} /> : <FileSpreadsheet size={24} />}
+                                            </div>
                                             <div>
                                                 <p className="font-bold text-corp-800 text-lg">{file.fileName}</p>
                                                 <p className="text-xs text-corp-400 font-medium mt-0.5">Uploaded: {file.uploadDate} • <span className="bg-gray-100 px-2 py-0.5 rounded text-corp-600">{file.rowCount} Records</span></p>
@@ -1080,7 +1156,7 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
                                             <button onClick={() => handleViewFile(file)} className="px-5 py-2.5 bg-corp-900 text-white rounded-lg text-sm font-bold hover:bg-corp-800 shadow-md flex items-center transition-all">
                                                 <ArrowLeft size={16} className="rotate-180 mr-2" /> Open
                                             </button>
-                                            {canDelete && <button onClick={(e) => initiateDeleteFile(file.id, e)} className="p-2.5 text-corp-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Move to Recycle Bin"><Trash2 size={20} /></button>}
+                                            {canDelete && file.id !== 'cloud_data' && <button onClick={(e) => initiateDeleteFile(file.id, e)} className="p-2.5 text-corp-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors" title="Move to Recycle Bin"><Trash2 size={20} /></button>}
                                         </div>
                                     </div>
                                 ))
@@ -1191,6 +1267,12 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
 
                   <div className="flex-1 bg-white border border-corp-200 rounded-xl overflow-hidden shadow-sm relative flex flex-col min-h-0 max-h-[600px] flex-grow">
                       <div className="flex-1 overflow-auto scrollbar-thin scrollbar-thumb-gray-300">
+                          {isLoading ? (
+                              <div className="flex flex-col items-center justify-center h-full text-gray-400">
+                                  <Loader2 size={48} className="animate-spin mb-4 text-blue-500" />
+                                  <p>Fetching Data...</p>
+                              </div>
+                          ) : (
                           <table className="w-full text-left border-collapse table-auto">
                               <thead className="sticky top-0 z-20 shadow-sm"><tr className="bg-gray-50/95 backdrop-blur-sm border-b border-corp-200 text-xs font-bold text-corp-400 uppercase">{currentColumns.map((col, idx) => {
                                 // HIDE TOTAL EXTENT FOR 6A DATA MODULE
@@ -1382,6 +1464,7 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
                                   )}) : (<tr><td colSpan={currentColumns.length + (!isExcelDriven ? 3 : 2)} className="px-6 py-10 text-center text-gray-400">No records found matching criteria.</td></tr>)}
                               </tbody>
                           </table>
+                          )}
                           <div ref={tableBottomRef} />
                       </div>
                       {totalPages > 1 && (
