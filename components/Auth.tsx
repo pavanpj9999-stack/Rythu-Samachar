@@ -33,17 +33,17 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    const result = AuthService.login(loginId, password);
+    const result = await AuthService.login(loginId, password);
     if (result.success && result.user) {
         if (result.user.role === UserRole.ADMIN) {
             // Admins bypass attendance
-            AuthService.updateUserLoginTime(result.user.id);
+            await AuthService.updateUserLoginTime(result.user.id);
             onLogin(result.user);
         } else {
             // Staff must check attendance
             const hasMarked = await DataService.getTodayAttendance(result.user.id);
             if (hasMarked) {
-                AuthService.updateUserLoginTime(result.user.id);
+                await AuthService.updateUserLoginTime(result.user.id);
                 onLogin(result.user);
             } else {
                 // Redirect to Attendance Popup
@@ -108,7 +108,7 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
       };
 
       await DataService.markAttendance(record);
-      AuthService.updateUserLoginTime(tempUser.id);
+      await AuthService.updateUserLoginTime(tempUser.id);
       
       setIsSubmitting(false);
       // Proceed to Dashboard
@@ -116,9 +116,9 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
   };
   // --- END ATTENDANCE LOGIC ---
 
-  const handleSendOtp = (e: React.FormEvent) => {
+  const handleSendOtp = async (e: React.FormEvent) => {
       e.preventDefault();
-      const result = AuthService.sendOtp(resetEmail);
+      const result = await AuthService.sendOtp(resetEmail);
       if(result.success && result.otp) {
           setDemoOtp(result.otp);
           setView('forgot_otp');
@@ -141,9 +141,9 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
       }
   };
 
-  const handleResetPassword = (e: React.FormEvent) => {
+  const handleResetPassword = async (e: React.FormEvent) => {
       e.preventDefault();
-      const result = AuthService.resetPassword(resetEmail, newPassword);
+      const result = await AuthService.resetPassword(resetEmail, newPassword);
       if(result.success) {
           alert("Password Reset Successful. Please Login.");
           setView('login');

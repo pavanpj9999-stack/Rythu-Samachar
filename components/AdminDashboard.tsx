@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { AuthService } from '../services/mockDataService';
 import { User, UserRole } from '../types';
@@ -30,9 +31,9 @@ export const AdminDashboard: React.FC = () => {
     setUsers(AuthService.getAllUsers());
   };
 
-  const handleAddStaff = (e: React.FormEvent) => {
+  const handleAddStaff = async (e: React.FormEvent) => {
       e.preventDefault();
-      const result = AuthService.addStaff({
+      const result = await AuthService.addStaff({
           name: newName,
           email: newEmail,
           mobile: newMobile,
@@ -51,9 +52,9 @@ export const AdminDashboard: React.FC = () => {
       }
   };
 
-  const handleStatusToggle = (id: string, currentStatus: 'Active' | 'Inactive') => {
+  const handleStatusToggle = async (id: string, currentStatus: 'Active' | 'Inactive') => {
       const newStatus = currentStatus === 'Active' ? 'Inactive' : 'Active';
-      if(AuthService.updateUserStatus(id, newStatus)) {
+      if(await AuthService.updateUserStatus(id, newStatus)) {
           loadUsers();
           setSuccess(`User ${newStatus === 'Active' ? 'Activated' : 'Deactivated'} Successfully`);
           setTimeout(() => setSuccess(''), 3000);
@@ -63,13 +64,13 @@ export const AdminDashboard: React.FC = () => {
       }
   };
 
-  const handleDelete = (id: string, role: UserRole) => {
+  const handleDelete = async (id: string, role: UserRole) => {
       if(role === UserRole.ADMIN) {
           alert("Cannot delete Main Admin.");
           return;
       }
       if(window.confirm("Are you sure you want to permanently delete this staff member? This action cannot be undone.")) {
-          AuthService.deleteUser(id);
+          await AuthService.deleteUser(id);
           loadUsers();
           setSuccess("Staff member deleted permanently.");
           setTimeout(() => setSuccess(''), 3000);
@@ -407,10 +408,10 @@ export const AdminDashboard: React.FC = () => {
                       <div className="pt-4 flex gap-3">
                           {viewUser.role !== UserRole.ADMIN && (
                               <button 
-                                onClick={() => {
+                                onClick={async () => {
                                    const newP = prompt("Enter new password for " + viewUser.name);
                                    if(newP) {
-                                       const res = AuthService.resetPassword(viewUser.email, newP);
+                                       const res = await AuthService.resetPassword(viewUser.email, newP);
                                        alert(res.message);
                                    }
                                 }}

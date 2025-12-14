@@ -18,7 +18,7 @@ export const AdminProfile: React.FC<AdminProfileProps> = ({ user, onProfileUpdat
         setFormData({ ...formData, [e.target.name]: e.target.value });
     };
 
-    const handleSave = (e: React.FormEvent) => {
+    const handleSave = async (e: React.FormEvent) => {
         e.preventDefault();
         
         // Basic Validation
@@ -32,7 +32,7 @@ export const AdminProfile: React.FC<AdminProfileProps> = ({ user, onProfileUpdat
              return;
         }
 
-        const result = AuthService.updateUserProfile(formData);
+        const result = await AuthService.updateUserProfile(formData);
         if (result.success) {
             setMsg({ type: 'success', text: result.message });
             onProfileUpdate(formData); // Update App state

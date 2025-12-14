@@ -40,8 +40,8 @@ export const ChangePassword: React.FC<ChangePasswordProps> = ({ user, onLogout }
     setIsLoading(true);
 
     // Simulate Network Delay for "Backend" feel
-    setTimeout(() => {
-        const result = AuthService.changePassword(user.id, currentPassword, newPassword);
+    setTimeout(async () => {
+        const result = await AuthService.changePassword(user.id, currentPassword, newPassword);
         setIsLoading(false);
 
         if (result.success) {
