@@ -1,4 +1,3 @@
-
 import { User, UserRole, DashboardStats, FMBRecord, KMLRecord, ARegisterFile, RecycleBinRecord, DynamicRecord, ModuleType, ARegisterSummary, AttendanceRecord } from '../types';
 import { db, storage } from './firebase';
 import { 
@@ -89,6 +88,10 @@ const calculateARegisterTotal = (record: DynamicRecord): string => {
 // --- IMAGE UPLOAD HELPER ---
 const uploadBase64ToStorage = async (base64String: string, path: string): Promise<string> => {
     if (!base64String || (!base64String.startsWith('data:image') && !base64String.startsWith('data:application'))) return base64String;
+    
+    // Fallback: If offline, we can't upload to storage. Return base64 to be saved in IndexedDB
+    if (isOfflineMode) return base64String;
+
     try {
         const storageRef = ref(storage, path);
         await uploadString(storageRef, base64String, 'data_url');
@@ -118,9 +121,13 @@ const chunkArray = <T>(array: T[], size: number): T[][] => {
     return chunked;
 };
 
-// --- HYBRID DATA SERVICE ---
-// Automatically switches between Cloud and Local based on connectivity/permission
-let isOfflineMode = false;
+// --- HYBRID DATA SERVICE CONFIGURATION ---
+// Detect if Firebase is actually configured with valid keys
+const apiKey = process.env.FIREBASE_API_KEY;
+const hasValidConfig = apiKey && apiKey !== "YOUR_API_KEY_HERE" && !apiKey.includes("placeholder");
+
+// Default to offline if not configured OR if previously failed
+let isOfflineMode = !hasValidConfig;
 
 const execute = async <T>(
     cloudFn: () => Promise<T>,
@@ -131,9 +138,9 @@ const execute = async <T>(
         return await cloudFn();
     } catch (error: any) {
         // Detect permission denied or connection errors
-        if (error?.code === 'permission-denied' || error?.code === 'unavailable' || error?.code === 'failed-precondition') {
+        if (error?.code === 'permission-denied' || error?.code === 'unavailable' || error?.code === 'failed-precondition' || error?.name === 'FirebaseError') {
             if (!isOfflineMode) {
-                console.warn(`Cloud Error (${error.code}). Switching to Offline Mode.`);
+                console.warn(`Cloud Error (${error.code || 'Connection Failed'}). Switching to Offline Mode.`);
                 isOfflineMode = true;
                 // Initialize local admin if switching to offline for the first time
                 DataService.initializeLocal();
@@ -148,15 +155,21 @@ const otpStore: Record<string, { code: string, expires: number }> = {};
 
 export const DataService = {
   initialize: async () => {
+      // 1. Strict Configuration Check
+      if (!hasValidConfig) {
+          console.log("Firebase not configured. Initializing Offline Mode (IndexedDB).");
+          isOfflineMode = true;
+          DataService.initializeLocal();
+          return;
+      }
+
       try {
-          // Attempt Cloud Connection
+          // 2. Attempt Cloud Connection (Read Admin)
           const usersRef = collection(db, 'users');
           // Simple read to test connection/permissions
-          await getDocs(query(usersRef, where('email', '==', 'test@test.com')));
-          
-          // If successful, ensure cloud admin exists
           const adminQ = query(usersRef, where('email', '==', 'sanju.pavan11@gmail.com'));
           const snapshot = await getDocs(adminQ);
+          
           if (snapshot.empty) {
               const adminUser: User = {
                 id: 'admin_1',
@@ -234,6 +247,7 @@ export const DataService = {
           async () => {
               const fileWithModule = { ...file, module };
               await dbOp(STORES.FILES, 'readwrite', store => store.put(fileWithModule));
+              return; // Explicit return to match void return type
           }
       );
   },
@@ -244,7 +258,11 @@ export const DataService = {
           async () => {
               const files = await dbGetAll<ARegisterFile>(STORES.FILES);
               const file = files.find(f => f.id === fileId);
-              if (file) { file.columns = newColumns; await dbOp(STORES.FILES, 'readwrite', store => store.put(file)); }
+              if (file) { 
+                  file.columns = newColumns; 
+                  await dbOp(STORES.FILES, 'readwrite', store => store.put(file)); 
+              }
+              return; // Explicit return to match void return type
           }
       );
   },
@@ -258,7 +276,6 @@ export const DataService = {
               const batchChunks = chunkArray(snapshot.docs, 400);
               for (const chunk of batchChunks) {
                   const batch = writeBatch(db);
-                  // Fix: Explicitly cast 'd' to any to avoid type error 'ref does not exist on unknown'
                   chunk.forEach((d: any) => batch.delete(d.ref));
                   await batch.commit();
               }
@@ -418,7 +435,7 @@ export const DataService = {
   saveARegisterSummary: async (summary: ARegisterSummary) => {
       return execute(
           async () => { await setDoc(doc(db, 'summaries', summary.fileId), summary); },
-          async () => { await dbOp(STORES.SUMMARIES, 'readwrite', store => store.put(summary)); }
+          async () => { await dbOp(STORES.SUMMARIES, 'readwrite', store => store.put(summary)); return; }
       );
   },
 
@@ -440,12 +457,11 @@ export const DataService = {
               const chunks = chunkArray(snap.docs, 400);
               for (const chunk of chunks) {
                   const batch = writeBatch(db);
-                  // Fix: Explicitly cast 'd' to any
                   chunk.forEach((d: any) => batch.delete(d.ref));
                   await batch.commit();
               }
           },
-          async () => { await dbOp(STORES.RECYCLE_BIN, 'readwrite', store => store.clear()); }
+          async () => { await dbOp(STORES.RECYCLE_BIN, 'readwrite', store => store.clear()); return; }
       );
   },
 
@@ -492,7 +508,6 @@ export const DataService = {
           async () => doSoftDelete(
               async () => dbOp(STORES.FMB, 'readonly', s => s.get(id)),
               async (item) => dbOp(STORES.RECYCLE_BIN, 'readwrite', s => s.put(item)),
-              // Fix: Wrap dbOp in a block to ensure Promise<void> return type
               async (id) => { await dbOp(STORES.FMB, 'readwrite', s => s.delete(id)); }
           )
       );
@@ -517,7 +532,6 @@ export const DataService = {
           async () => doSoftDelete(
               async () => dbOp(STORES.KML, 'readonly', s => s.get(id)),
               async (item) => dbOp(STORES.RECYCLE_BIN, 'readwrite', s => s.put(item)),
-              // Fix: Wrap dbOp in a block to ensure Promise<void> return type
               async (id) => { await dbOp(STORES.KML, 'readwrite', s => s.delete(id)); }
           )
       );
@@ -592,7 +606,7 @@ export const DataService = {
               }
               await setDoc(doc(db, 'fmb', record.id), record);
           },
-          async () => { await dbOp(STORES.FMB, 'readwrite', s => s.put(record)); }
+          async () => { await dbOp(STORES.FMB, 'readwrite', s => s.put(record)); return; }
       );
   },
   importFMB: async (newRecords: FMBRecord[]) => {
@@ -634,7 +648,7 @@ export const DataService = {
               }
               await setDoc(doc(db, 'kml', record.id), record);
           },
-          async () => { await dbOp(STORES.KML, 'readwrite', s => s.put(record)); }
+          async () => { await dbOp(STORES.KML, 'readwrite', s => s.put(record)); return; }
       );
   },
 
