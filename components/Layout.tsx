@@ -1,8 +1,8 @@
-
 import React, { useState, useEffect } from 'react';
-import { LogOut, LayoutDashboard, Database, Users, Menu, X, FileText, Spline, GitCompare, UserCheck, Shield, ChevronRight, Upload, Trash2, Lock, Camera } from 'lucide-react';
+import { LogOut, LayoutDashboard, Database, Users, Menu, X, FileText, Spline, GitCompare, UserCheck, Shield, ChevronRight, Upload, Trash2, Lock, Camera, Cloud, CloudOff } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { RythuLogo } from './RythuLogo';
+import { DataService } from '../services/mockDataService';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -15,6 +15,7 @@ interface LayoutProps {
 export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, activeTab, setActiveTab }) => {
   const [isSidebarOpen, setIsSidebarOpen] = React.useState(true);
   const [currentTime, setCurrentTime] = useState(new Date());
+  const isOffline = DataService.isOffline();
   
   // Live Clock Effect (Updates every second)
   useEffect(() => {
@@ -144,6 +145,17 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, active
           </div>
           
           <div className="flex items-center space-x-8">
+            {/* Status Indicator */}
+            {isOffline ? (
+                <div className="flex items-center text-amber-600 bg-amber-50 px-3 py-1 rounded-full text-xs font-bold border border-amber-200 animate-pulse" title="Data saved locally. Not syncing to other devices.">
+                    <CloudOff size={14} className="mr-1.5"/> Local Mode
+                </div>
+            ) : (
+                <div className="flex items-center text-green-600 bg-green-50 px-3 py-1 rounded-full text-xs font-bold border border-green-200" title="Connected to Cloud Database">
+                    <Cloud size={14} className="mr-1.5"/> Cloud Sync
+                </div>
+            )}
+
             {/* Live Clock Section */}
             <div className="hidden md:flex flex-col items-end border-r border-corp-100 pr-6">
               <div className="flex items-center text-corp-800 font-bold text-lg leading-none font-mono tracking-tight">
