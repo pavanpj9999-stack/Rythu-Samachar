@@ -1,39 +1,53 @@
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { getAuth } from 'firebase/auth';
 
-// --- PASTE YOUR KEYS HERE ---
-// 1. Go to console.firebase.google.com
-// 2. Select your project > Project Settings (Gear Icon) > General
-// 3. Scroll down to "Your apps" and copy the config values
+// --- MANUAL CONFIGURATION ---
+// IMPORTANT: If your deployment keys fail, paste them directly inside the quotes below.
 const manualConfig = {
-  apiKey: "PASTE_YOUR_API_KEY_HERE",             // e.g. "AIzaSy..."
-  authDomain: "PASTE_YOUR_AUTH_DOMAIN_HERE",     // e.g. "rythu-app.firebaseapp.com"
-  projectId: "PASTE_YOUR_PROJECT_ID_HERE",       // e.g. "rythu-app"
-  storageBucket: "PASTE_YOUR_STORAGE_BUCKET_HERE", // e.g. "rythu-app.appspot.com"
-  messagingSenderId: "PASTE_YOUR_SENDER_ID_HERE", // e.g. "123456789"
-  appId: "PASTE_YOUR_APP_ID_HERE"                // e.g. "1:12345:web:abcdef"
+  apiKey: "", 
+  authDomain: "",
+  projectId: "",
+  storageBucket: "",
+  messagingSenderId: "",
+  appId: ""
 };
 
 // --- CONFIGURATION LOGIC ---
 const getKey = (keyName: string, manualValue: string) => {
-    // 1. Prioritize Manual Value (if pasted above)
-    if (manualValue && manualValue !== "PASTE_YOUR_API_KEY_HERE" && manualValue !== "PASTE_YOUR_AUTH_DOMAIN_HERE" && !manualValue.includes("PASTE_YOUR")) {
-        return manualValue;
-    }
+    // 1. Prioritize Manual Value
+    if (manualValue && manualValue.trim() !== "") return manualValue;
     
-    // 2. Try Vite's import.meta.env (for deployed environments)
+    // 2. Try Vite's import.meta.env
     // @ts-ignore
     if (import.meta.env && import.meta.env[`VITE_${keyName}`]) {
         // @ts-ignore
         return import.meta.env[`VITE_${keyName}`];
     }
 
+    // 3. Try process.env
+    // @ts-ignore
+    if (typeof process !== 'undefined' && process.env && process.env[keyName]) {
+        // @ts-ignore
+        return process.env[keyName];
+    }
+
     return undefined;
 };
 
-const firebaseConfig = {
+// Check LocalStorage for dynamic config (Admin Panel Override)
+const getLocalConfig = () => {
+    try {
+        const stored = typeof window !== 'undefined' ? localStorage.getItem('rythu_firebase_config') : null;
+        if (stored) return JSON.parse(stored);
+    } catch (e) { console.error("Invalid Local Config", e); }
+    return null;
+};
+
+const localConfig = getLocalConfig();
+
+const firebaseConfig = localConfig || {
   apiKey: getKey('FIREBASE_API_KEY', manualConfig.apiKey),
   authDomain: getKey('FIREBASE_AUTH_DOMAIN', manualConfig.authDomain),
   projectId: getKey('FIREBASE_PROJECT_ID', manualConfig.projectId),
@@ -44,35 +58,40 @@ const firebaseConfig = {
 
 // --- INITIALIZATION ---
 let app = null;
-let firestoreDb = null;
-let firestoreStorage = null;
-let firestoreAuth = null;
 
-// Validation
 const isConfigValid = 
-    firebaseConfig.apiKey && 
-    !firebaseConfig.apiKey.includes("PASTE_YOUR");
+    (firebaseConfig.apiKey && firebaseConfig.apiKey !== "YOUR_API_KEY_HERE" && !String(firebaseConfig.apiKey).includes("undefined")) ||
+    (localConfig !== null); // Valid if local config exists
 
 if (isConfigValid) {
     try {
-        app = initializeApp(firebaseConfig);
-        firestoreDb = getFirestore(app);
-        firestoreStorage = getStorage(app);
-        firestoreAuth = getAuth(app);
-        console.log("✅ Firebase Connected: " + firebaseConfig.projectId);
-    } catch (e: any) {
-        if (e.code === 'app/duplicate-app') {
-            console.warn("Firebase App already initialized.");
+        if (!getApps().length) {
+            app = initializeApp(firebaseConfig);
+            console.log("✅ Firebase Connected: " + (firebaseConfig.projectId || "Custom Config"));
         } else {
-            console.error("Firebase Initialization Failed:", e);
+            app = getApp();
+            console.log("✅ Firebase Reused Existing Instance");
         }
+    } catch (e: any) {
+        console.error("Firebase Initialization Failed:", e);
     }
 } else {
-    console.warn("⚠️ Firebase Keys Missing. App running in DEMO MODE (Offline). Data will not sync.");
+    console.warn("⚠️ Firebase Keys Missing. App running in OFFLINE MODE (Data will not sync).");
 }
 
-export const db = firestoreDb;
-export const storage = firestoreStorage;
-export const auth = firestoreAuth;
+// Safely initialize services
+const safelyInitialize = (initFn: (app: any) => any, serviceName: string) => {
+    if (!app) return null;
+    try {
+        return initFn(app);
+    } catch (e) {
+        console.error(`${serviceName} failed to start.`, e);
+        return null;
+    }
+};
+
+export const db = safelyInitialize(getFirestore, 'Firestore');
+export const storage = safelyInitialize(getStorage, 'Storage');
+export const auth = safelyInitialize(getAuth, 'Auth');
 
 export default app;

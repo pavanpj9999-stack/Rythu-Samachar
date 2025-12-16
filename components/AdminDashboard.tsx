@@ -1,14 +1,13 @@
 import React, { useState, useEffect } from 'react';
-import { AuthService, DataService } from '../services/mockDataService';
+import { AuthService } from '../services/mockDataService';
 import { User, UserRole } from '../types';
-import { UserPlus, Trash2, Shield, Mail, Phone, Search, Users, ToggleLeft, ToggleRight, Eye, Calendar, Clock, Lock, CheckCircle, XCircle, X, FileSpreadsheet, FileText, RotateCcw, Loader2 } from 'lucide-react';
+import { UserPlus, Trash2, Shield, Mail, Phone, Search, Users, ToggleLeft, ToggleRight, Eye, Calendar, Clock, Lock, CheckCircle, XCircle, X, FileSpreadsheet, FileText, RotateCcw, Database, Save, AlertTriangle } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 export const AdminDashboard: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   
   // Add Staff State
@@ -23,22 +22,36 @@ export const AdminDashboard: React.FC = () => {
   // View Profile State
   const [viewUser, setViewUser] = useState<User | null>(null);
 
+  // DB Config State
+  const [showDbConfig, setShowDbConfig] = useState(false);
+  const [dbConfigJson, setDbConfigJson] = useState('');
+
   useEffect(() => {
     loadUsers();
+    // Load existing config if available for display
+    const existing = localStorage.getItem('rythu_firebase_config');
+    if(existing) setDbConfigJson(existing);
   }, []);
 
-  const loadUsers = async () => {
-    setLoading(true);
-    try {
-        // Force fetch from Cloud
-        const data = await DataService.fetchUsers();
-        setUsers(data);
-    } catch(e) {
-        console.error(e);
-        setError("Failed to fetch users from Cloud");
-    } finally {
-        setLoading(false);
-    }
+  const loadUsers = () => {
+    setUsers(AuthService.getAllUsers());
+  };
+
+  const handleSaveConfig = () => {
+      try {
+          // Validate JSON
+          const parsed = JSON.parse(dbConfigJson);
+          if(!parsed.apiKey || !parsed.projectId) {
+              setError("Invalid Config: Missing apiKey or projectId");
+              return;
+          }
+          localStorage.setItem('rythu_firebase_config', JSON.stringify(parsed));
+          setSuccess("Database Configuration Saved. Please reload the page.");
+          setShowDbConfig(false);
+          setTimeout(() => window.location.reload(), 1500);
+      } catch(e) {
+          setError("Invalid JSON Format.");
+      }
   };
 
   const handleAddStaff = async (e: React.FormEvent) => {
@@ -55,7 +68,7 @@ export const AdminDashboard: React.FC = () => {
           setError('');
           setIsAddMode(false);
           setNewName(''); setNewEmail(''); setNewMobile(''); setNewPassword('');
-          await loadUsers(); // Refresh list from Cloud
+          loadUsers();
           setTimeout(() => setSuccess(''), 3000);
       } else {
           setError(result.message);
@@ -65,7 +78,7 @@ export const AdminDashboard: React.FC = () => {
   const handleStatusToggle = async (id: string, currentStatus: 'Active' | 'Inactive') => {
       const newStatus = currentStatus === 'Active' ? 'Inactive' : 'Active';
       if(await AuthService.updateUserStatus(id, newStatus)) {
-          await loadUsers(); // Refresh
+          loadUsers();
           setSuccess(`User ${newStatus === 'Active' ? 'Activated' : 'Deactivated'} Successfully`);
           setTimeout(() => setSuccess(''), 3000);
       } else {
@@ -81,7 +94,7 @@ export const AdminDashboard: React.FC = () => {
       }
       if(window.confirm("Are you sure you want to permanently delete this staff member? This action cannot be undone.")) {
           await AuthService.deleteUser(id);
-          await loadUsers();
+          loadUsers();
           setSuccess("Staff member deleted permanently.");
           setTimeout(() => setSuccess(''), 3000);
       }
@@ -154,14 +167,12 @@ export const AdminDashboard: React.FC = () => {
            <p className="text-gray-500 mt-1">Manage Staff Access, Activation & System Permissions</p>
         </div>
         <div className="flex gap-4">
-             <div className="bg-blue-50 px-4 py-2 rounded-lg text-blue-700 text-sm font-semibold flex flex-col items-center">
-                 <span className="text-xl font-bold">{users.filter(u => u.role !== UserRole.ADMIN).length}</span>
-                 <span className="text-xs uppercase opacity-70">Total Staff</span>
-             </div>
-             <div className="bg-green-50 px-4 py-2 rounded-lg text-green-700 text-sm font-semibold flex flex-col items-center">
-                 <span className="text-xl font-bold">{users.filter(u => u.status === 'Active' && u.role !== UserRole.ADMIN).length}</span>
-                 <span className="text-xs uppercase opacity-70">Active</span>
-             </div>
+             <button 
+                onClick={() => setShowDbConfig(true)}
+                className="px-4 py-2 bg-purple-50 text-purple-700 border border-purple-200 rounded-lg text-sm font-semibold flex items-center hover:bg-purple-100 transition-colors"
+             >
+                 <Database size={18} className="mr-2" /> Database Config
+             </button>
              <button 
                 onClick={() => setIsAddMode(!isAddMode)} 
                 className={`px-5 py-2 rounded-lg flex items-center shadow-md transition-colors font-medium ${isAddMode ? 'bg-gray-100 text-gray-700' : 'bg-agri-600 text-white hover:bg-agri-700'}`}
@@ -179,7 +190,36 @@ export const AdminDashboard: React.FC = () => {
           </div>
       )}
 
-      {/* 3. ADD STAFF FORM */}
+      {/* 3. DATABASE CONFIG MODAL */}
+      {showDbConfig && (
+          <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
+              <div className="bg-white w-full max-w-lg rounded-xl shadow-2xl p-6 relative">
+                  <button onClick={() => setShowDbConfig(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><X size={20}/></button>
+                  <h3 className="text-xl font-bold text-gray-800 mb-2 flex items-center"><Database className="mr-2 text-purple-600"/> Connect Database</h3>
+                  <p className="text-sm text-gray-500 mb-4">Paste your Firebase Configuration JSON object here. This allows the application to connect to your real database instance.</p>
+                  
+                  <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 mb-4 text-xs font-mono text-gray-600">
+                      {`{ "apiKey": "...", "authDomain": "...", "projectId": "...", ... }`}
+                  </div>
+
+                  <textarea 
+                      className="w-full h-40 p-3 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-purple-500 outline-none"
+                      placeholder="Paste JSON config here..."
+                      value={dbConfigJson}
+                      onChange={e => setDbConfigJson(e.target.value)}
+                  />
+                  
+                  <div className="flex justify-end gap-3 mt-4">
+                      <button onClick={() => setShowDbConfig(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
+                      <button onClick={handleSaveConfig} className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-bold shadow-md flex items-center">
+                          <Save size={18} className="mr-2"/> Save & Connect
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* 4. ADD STAFF FORM */}
       {isAddMode && (
           <div className="bg-white p-6 rounded-xl shadow-lg border-t-4 border-agri-500 animate-in fade-in slide-in-from-top-4">
               <h3 className="font-bold text-gray-800 mb-6 flex items-center text-lg">
@@ -215,7 +255,7 @@ export const AdminDashboard: React.FC = () => {
           </div>
       )}
 
-      {/* 4. STAFF ACTIVATION TABLE */}
+      {/* 5. STAFF ACTIVATION TABLE */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
           <div className="p-5 border-b bg-gray-50 flex flex-col lg:flex-row justify-between items-center gap-4">
               <h3 className="font-bold text-gray-800 flex items-center text-lg">
@@ -267,9 +307,7 @@ export const AdminDashboard: React.FC = () => {
                       </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                      {loading ? (
-                          <tr><td colSpan={5} className="py-12 text-center text-gray-400"><Loader2 size={32} className="animate-spin mx-auto mb-2"/>Loading users from Cloud...</td></tr>
-                      ) : filteredUsers.map(user => {
+                      {filteredUsers.map(user => {
                           const isHighlighted = user.is_new === 1 || user.is_updated === 1;
                           const rowClass = isHighlighted 
                             ? 'bg-[#d4f8d4] hover:bg-green-100 transition-colors group'
@@ -356,7 +394,7 @@ export const AdminDashboard: React.FC = () => {
                           </tr>
                           )
                       })}
-                      {!loading && filteredUsers.length === 0 && (
+                      {filteredUsers.length === 0 && (
                           <tr>
                               <td colSpan={5} className="text-center py-10 text-gray-400">
                                   No staff members found matching your search.
