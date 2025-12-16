@@ -193,21 +193,41 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
   const isRythuDetails = moduleType === 'RYTHU_DETAILS';
   const isARegister = moduleType === 'AREGISTER';
   
-  // --- PERMISSIONS CONFIGURATION ---
   const canEdit = isAdmin || isRythuDetails || isData6A;
   const canDelete = isAdmin;
   const canManageColumns = isAdmin;
   const canUpload = isAdmin;
   const canAdd = isAdmin; // Admin can use the top 'Add Row' button
-  
-  // Special permissions for Staff Add Row feature
   const isStaff = user.role !== UserRole.ADMIN;
   const canStaffInsert = isStaff && (isData6A || isRythuDetails);
-
-  // CHANGED: Removed DATA_6A from here to enable the "Photo/Doc" column for 6A Data
   const isExcelDriven = ['AREGISTER', 'DKT_LAND'].includes(moduleType);
 
-  // --- COLUMN PERMISSION HELPER ---
+  // --- REAL-TIME SUBSCRIPTION HOOK ---
+  useEffect(() => {
+      // Subscribe to file list updates
+      const unsubscribe = DataService.subscribeToFiles(moduleType, (updatedFiles) => {
+          setFiles(prev => {
+              // Preserve "cloud_data" virtual file if it exists, as it's not in DB
+              const cloud = prev.find(f => f.id === 'cloud_data');
+              return cloud ? [cloud, ...updatedFiles] : updatedFiles;
+          });
+      });
+      return () => unsubscribe();
+  }, [moduleType]);
+
+  // --- RECORD SUBSCRIPTION HOOK ---
+  useEffect(() => {
+      if (selectedFile && selectedFile.id !== 'cloud_data' && viewMode === 'file') {
+          setIsLoading(true);
+          const unsubscribe = DataService.subscribeToModuleRecords(moduleType, selectedFile.id, (data) => {
+              data.sort((a, b) => a.id.localeCompare(b.id));
+              setRecords(data);
+              setIsLoading(false);
+          });
+          return () => unsubscribe();
+      }
+  }, [selectedFile, moduleType, viewMode]);
+
   const isColumnEditable = (colIndex: number, recordId?: string): boolean => {
       if (isAdmin) return true;
       if (isRythuDetails) return true;
@@ -230,7 +250,6 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
       "Deletion"
   ];
   
-  // Keywords for extent calculation and summary
   const EXTENT_KEYWORDS = {
     pattaDry: ['Patta Dry', 'Patta Metta', 'Dry Patta', 'Metta', 'మెట్ట'],
     pattaWet: ['Patta Wet', 'Patta Tari', 'Wet Patta', 'Tari', 'తరి'],
@@ -240,40 +259,6 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
     dottedWet: ['Dotted Wet', 'Dot Wet', 'Chukkala Tari', 'చుక్కల తరి'],
     uaw: ['UAW', 'Unassessed', 'అంచనా వేయబడని'],
     poramboke: ['Poramboke', 'Govt', 'Government', 'పోరంబోకు', 'ప్రభుత్వ']
-  };
-
-  useEffect(() => {
-    loadFiles();
-    fetchCloudData(); // Attempt cloud fetch on load
-  }, [moduleType]);
-
-  const fetchCloudData = async () => {
-      try {
-          // Attempt to fetch from API
-          const res = await axios.get(`${API_BASE}/${moduleType.toLowerCase()}`);
-          if (res.data && Array.isArray(res.data) && res.data.length > 0) {
-              // Create a virtual file for API data
-              const cloudFile: ARegisterFile = {
-                  id: 'cloud_data',
-                  fileName: 'Cloud Database (API)',
-                  uploadDate: new Date().toLocaleDateString(),
-                  rowCount: res.data.length,
-                  columns: Object.keys(res.data[0]),
-                  module: moduleType
-              };
-              // Add to files list or auto-select if preferred
-              setFiles(prev => {
-                  if (prev.some(f => f.id === 'cloud_data')) return prev;
-                  return [cloudFile, ...prev];
-              });
-              
-              // Optionally populate records immediately if needed, but user logic expects file selection
-              setApiError(false);
-          }
-      } catch (err) {
-          console.warn("API Connection failed or no data:", err);
-          setApiError(true);
-      }
   };
 
   useEffect(() => {
@@ -297,21 +282,25 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
       }
   }, [toast.show]);
 
-  const loadFiles = async () => {
-    const loadedFiles = await DataService.getModuleFiles(moduleType);
-    setFiles(prev => {
-        // Keep Cloud file if it exists in state
-        const cloud = prev.find(f => f.id === 'cloud_data');
-        return cloud ? [cloud, ...loadedFiles] : loadedFiles;
-    });
-  };
-
   const showToast = (message: string, type: 'success' | 'error' = 'success') => {
       setToast({ show: true, message, type });
   };
 
+  const loadFiles = async () => {
+    try {
+        const loadedFiles = await DataService.getModuleFiles(moduleType);
+        setFiles(prev => {
+            const cloud = prev.find(f => f.id === 'cloud_data');
+            return cloud ? [cloud, ...loadedFiles] : loadedFiles;
+        });
+        showToast("Files refreshed");
+    } catch (e) {
+        console.error("Failed to refresh files", e);
+        showToast("Failed to refresh files", "error");
+    }
+  };
+
   const isMediaColumn = (colName: string) => {
-      // Allow Rythu Details AND Data 6A to have dynamic media columns
       if (!isRythuDetails && !isData6A) return false;
       const lower = colName.toLowerCase();
       return ['photo', 'image', 'url', 'link', 'ఫోటో', 'document', 'file', 'pattadar passbook', 'passbook'].some(k => lower.includes(k));
@@ -350,7 +339,6 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
       if (!summaryStats) return;
       if (value && !/^\d*\.?\d*$/.test(value)) return;
       const newStats = { ...summaryStats, [field]: value === '' ? 0 : parseFloat(value) };
-      // Auto-update total if individual fields change
       if (field !== 'totalextent') {
         newStats.totalextent = newStats.pattaDry + newStats.pattaWet + newStats.inamDry + newStats.inamWet + newStats.dottedDry + newStats.dottedWet + newStats.uaw + newStats.poramboke;
       }
@@ -458,8 +446,6 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
           await DataService.saveModuleFile(moduleType, newFile);
           await DataService.saveModuleRecords(moduleType, newRecords);
           showToast(`Uploaded ${dataRows.length} rows successfully!`);
-          await loadFiles();
-          await handleViewFile(newFile);
           
           // Reset Upload State
           setSelectedUploadFile(null);
@@ -470,11 +456,9 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
       reader.readAsArrayBuffer(file);
   };
 
-  // Direct File Selection Handler (for Add Data Tab)
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (file) {
-          // Validate Excel extension
           if (!file.name.match(/\.(xlsx|xls)$/i)) {
               showToast("Invalid file type. Please select an Excel file (.xlsx, .xls)", "error");
               if (fileInputRef.current) fileInputRef.current.value = '';
@@ -484,7 +468,6 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
       }
   };
 
-  // Upload Button Click Handler
   const handleUpload = () => {
       if (selectedUploadFile) {
           processExcelFile(selectedUploadFile);
@@ -493,7 +476,6 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
       }
   };
 
-  // Legacy Input Handler (Hidden Input trigger)
   const handleExcelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (!canUpload) {
         showToast("Permission Denied: Only Admins can upload files.", "error");
@@ -526,33 +508,30 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
           } finally {
               setIsLoading(false);
           }
+          setRecords(fileRecords); // Set initial data for cloud file
       } else {
-          fileRecords = await DataService.getModuleRecords(moduleType, file.id);
+          // Trigger subscription logic via useEffect
+          // Just clear records momentarily to show loading
+          setRecords([]);
       }
 
       setCurrentColumns(file.columns || []);
-      
-      fileRecords.sort((a, b) => a.id.localeCompare(b.id));
-      setRecords(fileRecords);
       setEditingId(null);
       setEditFormData(null);
       setCurrentPage(1);
       setViewMode('file');
       setActiveTab('data');
-      setIsFullScreen(false); // Reset fullscreen on new file open
+      setIsFullScreen(false); 
   };
 
   const toggleFullScreen = () => {
     setIsFullScreen(!isFullScreen);
-    // Optionally adjust items per page for larger screen
-    // setItemsPerPage(prev => !isFullScreen ? 25 : 10);
   };
 
   const confirmDeleteFile = async () => {
       if(deleteModal.id) {
           const success = await DataService.softDeleteModuleFile(moduleType, deleteModal.id, user.name);
           if (success) {
-              await loadFiles();
               if(selectedFile?.id === deleteModal.id) {
                  setViewMode('list');
                  setSelectedFile(null);
@@ -582,16 +561,16 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
   const handleSaveRow = async () => {
       if (!editFormData) return;
       
-      // Update Audit Fields & Set Modified Flag
       const recordToSave: DynamicRecord = { 
           ...editFormData, 
           is_updated: 1,
-          is_modified: 1, // MANUALLY MODIFIED = PINK
-          is_highlighted: 1, // Legacy flag sync
+          is_modified: 1, 
+          is_highlighted: 1,
           updatedBy: user.name,
           updatedDate: new Date().toISOString()
       };
       
+      // Update state immediately for responsiveness
       const updatedRecords = records.map(r => r.id === editFormData.id ? recordToSave : r);
       setRecords(updatedRecords);
       await DataService.saveModuleRecords(moduleType, [recordToSave]);
@@ -608,10 +587,8 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
       if (currentColumns.includes(formattedName)) return;
       const newCols = [...currentColumns, formattedName];
       setCurrentColumns(newCols);
-      if (selectedFile) {
-         if (selectedFile.id !== 'cloud_data') {
-             await DataService.updateModuleFileColumns(moduleType, selectedFile.id, newCols);
-         }
+      if (selectedFile && selectedFile.id !== 'cloud_data') {
+         await DataService.updateModuleFileColumns(moduleType, selectedFile.id, newCols);
          const updatedFile = { ...selectedFile, columns: newCols };
          setSelectedFile(updatedFile);
       }
@@ -631,9 +608,8 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
       imageUrl: "",
       documents: [],
       is_new: 1,
-      is_modified: 1, // MANUALLY ADDED = PINK
+      is_modified: 1, 
       is_highlighted: 1,
-      // Audit Fields for Creation
       createdBy: user.name,
       createdDate: new Date().toISOString()
     };
@@ -653,11 +629,9 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
     showToast("New row added.");
   };
 
-  // Staff Only: Insert Row BELOW clicked row
   const handleInsertRowAfter = async (targetRecordId: string) => {
     if (!selectedFile || !canStaffInsert) return;
 
-    // Clear search to ensure visibility of new row
     setSearchTerm('');
 
     const timestamp = Date.now();
@@ -667,16 +641,14 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
       imageUrl: "",
       documents: [],
       is_new: 1,
-      is_modified: 1, // MANUALLY INSERTED = PINK
+      is_modified: 1,
       is_highlighted: 1,
       createdBy: user.name,
       createdDate: new Date().toISOString()
     };
 
-    // Find index of the target row in the main records array
     const targetIndex = records.findIndex(r => r.id === targetRecordId);
     
-    // Serial Number Calculation
     const snKeywords = ['s.no', 'sl.no', 'serial no', 'no.', 'no'];
     const snCol = currentColumns.find(c => snKeywords.includes(c.toLowerCase()));
 
@@ -693,10 +665,8 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
 
     let newRecords = [...records];
     if (targetIndex !== -1) {
-        // Insert after target
         newRecords.splice(targetIndex + 1, 0, newRecord);
     } else {
-        // Fallback: Add to top
         newRecords.unshift(newRecord);
     }
 
@@ -704,14 +674,12 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
     setEditingId(newRecord.id);
     setEditFormData(newRecord);
     
-    // Calculate new page
     const newIndex = targetIndex + 1;
     const newPage = Math.ceil((newIndex + 1) / itemsPerPage);
     if (newPage !== currentPage) {
         setCurrentPage(newPage);
     }
     
-    // Save
     await DataService.saveModuleRecords(moduleType, [newRecord]);
     showToast("New row added.");
   };
@@ -720,9 +688,7 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
     let total = 0;
     const keywords = Object.values(EXTENT_KEYWORDS).flat();
     Object.keys(record).forEach(key => {
-        // Skip metadata and Total Extent itself
         if (key === 'Total Extent') return;
-
         if (keywords.some(k => key.toLowerCase().includes(k.toLowerCase()))) {
              total += parseExtent(record[key]);
         }
@@ -733,7 +699,6 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
   const handleEditChange = (col: string, value: string) => { 
       if (editFormData) { 
           const updated = { ...editFormData, [col]: value };
-          // Auto-calculate Total Extent on Edit for A-Register
           if (isARegister) {
              const total = calculateRowTotalExtent(updated, currentColumns);
              updated['Total Extent'] = total.toFixed(2);
@@ -742,7 +707,6 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
       } 
   };
   
-  // Unified Media Upload for Dynamic Columns or Generic ImageUrl
   const handleMediaUpload = (recordId: string, colKey: string | null, e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (file && editFormData && editFormData.id === recordId) {
@@ -759,7 +723,6 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
       }
   };
 
-  // Direct Upload for Admins (Immediate Save without Edit Mode)
   const handleDirectMediaUpload = async (recordId: string, colKey: string | null, e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (file) {
@@ -778,15 +741,12 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
                       updatedDate: new Date().toISOString()
                   };
                   
-                  // Update state immediately
                   setRecords(prev => prev.map(r => r.id === recordId ? updatedRecord : r));
                   
-                  // Update edit form if open
                   if (editingId === recordId && editFormData) {
                       setEditFormData(prev => prev ? ({ ...prev, [colKey || 'imageUrl']: base64 }) : null);
                   }
 
-                  // Save to DB
                   await DataService.saveModuleRecords(moduleType, [updatedRecord]);
                   showToast("Photo uploaded successfully");
               }
@@ -821,10 +781,7 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
           const dataToExport = filteredRecords;
           const exportData = dataToExport.map(record => {
             const cleanRecord: Record<string, any> = {};
-            
-            // For A-Register, ensure Total Extent is included if not present in original data
             if (isARegister) {
-                // If the record from backend didn't have Total Extent, calculate it now
                 if (!record['Total Extent']) {
                     cleanRecord['Total Extent'] = calculateRowTotalExtent(record, currentColumns).toFixed(2);
                 } else {
@@ -845,8 +802,6 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
                     value = String(value);
                 }
                 
-                // Truncate logic to prevent Excel 32k character limit crash
-                // Reduced from 30k to 25k to be absolutely safe against UTF-8/multi-byte issues
                 if (value.length > 25000) {
                     if (value.startsWith('data:')) {
                         value = '[Media Content - Not Exported]';
@@ -875,8 +830,6 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
         doc.text(`${title} Report`, 14, 10);
         
         let tableColumn = currentColumns.slice(0, 10);
-        
-        // Add Total Extent column to PDF if missing in header
         if (isARegister) {
              const hasTotal = tableColumn.some(c => c === 'Total Extent');
              if (!hasTotal) tableColumn.push('Total Extent');
@@ -916,7 +869,6 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
       }
   };
 
-  // --- FILTERING LOGIC ---
   const getColumnName = (keywords: string[]) => {
     if (!currentColumns.length) return undefined;
     return currentColumns.find(col => keywords.some(k => col.toLowerCase().includes(k.toLowerCase())));
@@ -1066,7 +1018,6 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
                                       <h2 className="text-2xl font-bold text-gray-800 mb-2">Upload Excel File</h2>
                                       <p className="text-gray-500 mb-8">Select a .xlsx or .xls file to import new 6A data records.</p>
                                       
-                                      {/* File Picker */}
                                       <input 
                                           type="file" 
                                           ref={fileInputRef} 
@@ -1110,7 +1061,6 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
                       </div>
                   </div>
               ) : (
-                  /* DEFAULT LAYOUT FOR OTHER MODULES */
                   <>
                     <div className="bg-white p-8 rounded-xl shadow-sm border border-corp-100 flex flex-col md:flex-row items-center gap-8">
                         <div className="flex-1">
@@ -1134,7 +1084,7 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
                             <h3 className="font-bold text-corp-800">Recent Uploads</h3>
                             <div className="flex items-center gap-2">
                                 {apiError && <span className="text-xs text-red-500 flex items-center"><CloudOff size={14} className="mr-1"/> Offline</span>}
-                                <button onClick={() => { fetchCloudData(); loadFiles(); }} className="text-sm text-agri-600 font-medium hover:underline">Refresh List</button>
+                                <button onClick={loadFiles} className="text-sm text-agri-600 font-medium hover:underline">Refresh List</button>
                             </div>
                         </div>
                         <div className="divide-y divide-corp-50">
@@ -1168,6 +1118,7 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
           </div>
       )}
 
+      {/* RENDER TABLE VIEW (unchanged essentially, just uses records state which is now reactive) */}
       {viewMode === 'file' && (
         <div className={isFullScreen ? "fixed inset-0 z-[100] bg-white flex flex-col animate-in fade-in zoom-in-95" : "flex flex-col h-[calc(100vh-8rem)] animate-in fade-in slide-in-from-right-4"}>
           {toast.show && (<div className={`fixed top-24 right-5 z-[110] px-6 py-4 rounded-lg shadow-2xl flex items-center gap-3 animate-in slide-in-from-right duration-300 ${toast.type === 'success' ? 'bg-corp-900 text-white' : 'bg-red-600 text-white'}`}>{toast.type === 'success' ? <CheckCircle size={20} /> : <AlertTriangle size={20} />}<span className="font-bold">{toast.message}</span></div>)}
@@ -1275,329 +1226,370 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
                           ) : (
                           <table className="w-full text-left border-collapse table-auto">
                               <thead className="sticky top-0 z-20 shadow-sm"><tr className="bg-gray-50/95 backdrop-blur-sm border-b border-corp-200 text-xs font-bold text-corp-400 uppercase">{currentColumns.map((col, idx) => {
-                                // HIDE TOTAL EXTENT FOR 6A DATA MODULE
                                 if (moduleType === 'DATA_6A' && col === 'Total Extent') return null;
                                 return (<th key={idx} className={`px-3 py-3 border-r border-gray-200 min-w-[120px] max-w-[250px] whitespace-normal break-words ${col === 'Total Extent' ? 'bg-green-50 text-green-800 text-right' : ''}`}>{col}</th>);
                               })}{!isExcelDriven && <th className="px-3 py-3 w-24 text-center">{isRythuDetails ? 'Picture' : 'Photo/Doc'}</th>}{canEdit && <th className="px-3 py-3 w-24 text-center">Action</th>}</tr></thead>
                               <tbody className="bg-white divide-y divide-gray-100">
                                   {paginatedRecords.length > 0 ? paginatedRecords.map((record, index) => {
-                                      const globalRowIndex = (currentPage - 1) * itemsPerPage + index;
                                       const isSpecialModule = ['DATA_6A', 'RYTHU_DETAILS'].includes(moduleType);
+                                      // Row Background Logic
+                                      let rowClass = "hover:bg-blue-50/30";
+                                      if (record.is_new) rowClass = "bg-[#d4f8d4] hover:bg-green-100";
+                                      else if (record.is_modified || record.is_updated) rowClass = "bg-pink-50 hover:bg-pink-100"; // Pink if updated
                                       
-                                      // PINK HIGHLIGHT LOGIC for 6A and Rythu Details
-                                      // Highlight Pink if: Manually Modified/Added (is_modified === 1)
-                                      let rowClass = "";
-                                      if (isSpecialModule) {
-                                          if (record.is_modified === 1) {
-                                              rowClass = "bg-[#ffcce0] hover:bg-[#ffb6c1] transition-colors group"; // PINK Background for Manual Changes
-                                          } else if (record.is_new === 1) {
-                                              rowClass = "bg-[#d4f8d4] hover:bg-green-100 transition-colors group"; // GREEN for New Uploads
-                                          } else {
-                                              rowClass = "hover:bg-gray-50 transition-colors group"; // Default White for Bulk Upload/Unchanged
-                                          }
-                                      } else {
-                                          // Default Logic for A-Register etc. (Green for new)
-                                          const isNewOrUpdated = record.is_new === 1 || record.is_updated === 1;
-                                          rowClass = isNewOrUpdated 
-                                            ? 'bg-[#d4f8d4] hover:bg-green-100 transition-colors group' 
-                                            : 'hover:bg-blue-50/30 transition-colors group';
-                                      }
+                                      const isEditing = editingId === record.id;
+                                      if (isEditing) rowClass = "bg-yellow-50";
 
                                       return (
-                                      <tr key={record.id} className={rowClass}>
-                                          {currentColumns.map((col, idx) => {
-                                              // HIDE TOTAL EXTENT FOR 6A DATA MODULE
-                                              if (moduleType === 'DATA_6A' && col === 'Total Extent') return null;
+                                          <tr key={record.id} className={`${rowClass} group transition-colors`}>
+                                              {currentColumns.map((col, cIdx) => {
+                                                  if (moduleType === 'DATA_6A' && col === 'Total Extent') return null;
+                                                  
+                                                  const isTotalExtent = col === 'Total Extent';
+                                                  const isMedia = isMediaColumn(col);
 
-                                              if (isData6A && (idx as number) === 1) {
                                                   return (
-                                                    <td key={idx} className="px-3 py-2 border-r border-gray-100 align-middle min-w-[120px] max-w-[250px] whitespace-normal break-words text-sm text-corp-700">
-                                                        <div className="flex items-center justify-between gap-2 group/cell relative">
-                                                            <div className="flex-1 min-w-0">
-                                                                {editingId === record.id ? (
-                                                                    isColumnEditable(idx, record.id) ? (
-                                                                        <input 
-                                                                            autoFocus={idx === 0}
-                                                                            className="w-full p-1.5 text-sm border-2 border-blue-200 rounded focus:ring-2 focus:ring-blue-500 outline-none" 
-                                                                            value={editFormData?.[col] || ''} 
-                                                                            onChange={e => handleEditChange(col, e.target.value)} 
-                                                                        />
-                                                                    ) : (
-                                                                        <input disabled className="w-full p-1.5 text-sm border border-gray-200 rounded bg-gray-50 text-gray-500 cursor-not-allowed select-none" value={editFormData?.[col] || ''} title="Read Only" />
-                                                                    )
-                                                                ) : (
-                                                                    record[col]
-                                                                )}
-                                                            </div>
-                                                            {canStaffInsert && (
-                                                                <button 
-                                                                    onClick={() => handleInsertRowAfter(record.id)}
-                                                                    className="opacity-0 group-hover/cell:opacity-100 p-1 text-agri-600 hover:bg-agri-100 rounded transition-opacity"
-                                                                    title="Add Row Below"
-                                                                >
-                                                                    <PlusCircle size={16} />
-                                                                </button>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                  );
-                                              }
-
-                                              // Check for RYTHU PHOTO Column (Exclusive Logic)
-                                              if (isRythuDetails && (col.toLowerCase().includes('photo') || col.toLowerCase().includes('picture'))) {
-                                                   const mediaUrl = editFormData && editingId === record.id ? editFormData[col] : record[col];
-                                                   // STRICT: Only Admin can upload photo - BUT in Full Screen if we allow upload, logic is here:
-                                                   const isPhotoEditable = isAdmin; // Admin can always edit photo directly
-                                                   return (
-                                                       <td key={idx} className="px-3 py-2 border-r border-gray-100 align-middle text-center w-[120px]">
-                                                           <PhotoCell 
-                                                               url={mediaUrl} 
-                                                               isEditable={isPhotoEditable}
-                                                               onUpload={(e) => handleDirectMediaUpload(record.id, col, e)}
-                                                               onClick={() => openMediaViewer(mediaUrl, col)}
-                                                           />
-                                                       </td>
-                                                   );
-                                              }
-
-                                              // Check for Generic Media Columns
-                                              if (isMediaColumn(col)) {
-                                                   const mediaUrl = editFormData && editingId === record.id ? editFormData[col] : record[col];
-                                                   return (
-                                                       <td key={idx} className="px-3 py-2 border-r border-gray-100 align-middle text-center w-[120px]">
-                                                           <MediaCell 
-                                                               url={mediaUrl} 
-                                                               isEditable={editingId === record.id && isColumnEditable(idx, record.id)}
-                                                               onUpload={(e) => handleMediaUpload(record.id, col, e)}
-                                                               onClick={() => openMediaViewer(mediaUrl, col)}
-                                                           />
-                                                       </td>
-                                                   );
-                                              }
-
-                                              // Check for DISPIMG formula
-                                              const dispImgId = extractDispImgId(record[col]);
-                                              
-                                              // Special Styling for Total Extent
-                                              const isTotalExtent = col === 'Total Extent';
-
-                                              return (
-                                              <td key={idx} className={`px-3 py-2 border-r border-gray-100 align-middle min-w-[120px] max-w-[250px] whitespace-normal break-words text-sm text-corp-700 ${isTotalExtent ? 'text-right font-bold text-green-700 bg-green-50/30' : ''}`}>
-                                                  {editingId === record.id ? (
-                                                      isColumnEditable(idx, record.id) && !isTotalExtent ? (
-                                                          (idx as number) === 23 && isData6A ? (
-                                                               <select 
-                                                                  autoFocus={idx === 0}
-                                                                  className="w-full p-1.5 text-sm border-2 border-blue-200 rounded focus:ring-2 focus:ring-blue-500 outline-none bg-white"
-                                                                  value={editFormData?.[col] || ''}
-                                                                  onChange={e => handleEditChange(col, e.target.value)}
-                                                               >
-                                                                  {REASONS_DROPDOWN.map(r => <option key={r} value={r}>{r}</option>)}
-                                                               </select>
+                                                  <td key={cIdx} className={`px-3 py-2 border-r border-gray-100 align-top min-w-[120px] max-w-[250px] break-words text-sm ${isTotalExtent ? 'text-right font-bold text-green-700 bg-green-50/30' : 'text-gray-700'}`}>
+                                                      {isEditing ? (
+                                                          isTotalExtent ? (
+                                                              <span>{editFormData?.[col]}</span>
+                                                          ) : isColumnEditable(cIdx, record.id) ? (
+                                                              moduleType === 'DATA_6A' && cIdx === 23 ? (
+                                                                  <select
+                                                                      className="w-full p-1.5 border border-blue-300 rounded bg-white text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                                                                      value={editFormData?.[col] || "Select Reason"}
+                                                                      onChange={e => handleEditChange(col, e.target.value)}
+                                                                  >
+                                                                      {REASONS_DROPDOWN.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                                                                  </select>
+                                                              ) : isMedia ? (
+                                                                   <div className="flex flex-col items-center">
+                                                                       {isRythuDetails ? (
+                                                                           <PhotoCell 
+                                                                               url={editFormData?.[col]} 
+                                                                               isEditable={true} 
+                                                                               onUpload={(e) => handleMediaUpload(record.id, col, e)}
+                                                                               onClick={() => openMediaViewer(editFormData?.[col])}
+                                                                           />
+                                                                       ) : (
+                                                                           <MediaCell 
+                                                                               url={editFormData?.[col]} 
+                                                                               isEditable={true} 
+                                                                               onUpload={(e) => handleMediaUpload(record.id, col, e)}
+                                                                               onClick={() => openMediaViewer(editFormData?.[col])}
+                                                                           />
+                                                                       )}
+                                                                   </div>
+                                                              ) : (
+                                                                  <textarea 
+                                                                      className="w-full p-1.5 border border-blue-300 rounded focus:ring-2 focus:ring-blue-500 outline-none min-h-[38px] resize-y"
+                                                                      value={editFormData?.[col] || ""}
+                                                                      onChange={e => handleEditChange(col, e.target.value)}
+                                                                  />
+                                                              )
                                                           ) : (
-                                                               <input 
-                                                                  autoFocus={idx === 0}
-                                                                  className="w-full p-1.5 text-sm border-2 border-blue-200 rounded focus:ring-2 focus:ring-blue-500 outline-none" 
-                                                                  value={editFormData?.[col] || ''} 
-                                                                  onChange={e => handleEditChange(col, e.target.value)} 
-                                                                />
+                                                              <span className="text-gray-400 italic">{record[col]}</span>
                                                           )
                                                       ) : (
-                                                           <input disabled className={`w-full p-1.5 text-sm border border-gray-200 rounded bg-gray-50 text-gray-500 cursor-not-allowed select-none ${isTotalExtent ? 'text-right font-bold' : ''}`} value={editFormData?.[col] || ''} title="Read Only" />
-                                                      )
-                                                  ) : (
-                                                    dispImgId ? (
-                                                        <div className="w-[60px] h-[60px] bg-gray-100 rounded-md border border-gray-200 overflow-hidden flex items-center justify-center relative group shadow-sm mx-auto">
-                                                            <img 
-                                                                src={`/uploads/${dispImgId}.jpg`} 
-                                                                alt={dispImgId}
-                                                                className="w-full h-full object-cover"
-                                                                onError={(e) => {
-                                                                    e.currentTarget.onerror = null;
-                                                                    e.currentTarget.src = "https://www.w3schools.com/howto/img_avatar.png"; 
-                                                                }}
-                                                                title={`ID: ${dispImgId}`}
-                                                            />
-                                                        </div>
+                                                          isMedia ? (
+                                                              <div className="flex justify-center">
+                                                                {record[col] ? (
+                                                                    <button onClick={() => openMediaViewer(record[col], `Column: ${col}`)} className="text-blue-600 hover:underline text-xs flex items-center">
+                                                                        <ImageIcon size={14} className="mr-1"/> View
+                                                                    </button>
+                                                                ) : <span className="text-gray-300">-</span>}
+                                                              </div>
+                                                          ) : (
+                                                              <span>{record[col]}</span>
+                                                          )
+                                                      )}
+                                                  </td>
+                                              )})}
+                                              
+                                              {!isExcelDriven && (
+                                                <td className="px-3 py-2 text-center align-middle border-r border-gray-100">
+                                                    {isEditing ? (
+                                                       <div className="flex justify-center">
+                                                           {isRythuDetails ? (
+                                                               <PhotoCell 
+                                                                   url={editFormData?.imageUrl} 
+                                                                   isEditable={true} 
+                                                                   onUpload={(e) => handleMediaUpload(record.id, null, e)}
+                                                                   onClick={() => openMediaViewer(editFormData?.imageUrl)}
+                                                               />
+                                                           ) : (
+                                                               <MediaCell 
+                                                                   url={editFormData?.imageUrl} 
+                                                                   isEditable={true} 
+                                                                   onUpload={(e) => handleMediaUpload(record.id, null, e)}
+                                                                   onClick={() => openMediaViewer(editFormData?.imageUrl)}
+                                                               />
+                                                           )}
+                                                       </div>
                                                     ) : (
-                                                        record[col]
-                                                    )
-                                                  )}
-                                              </td>
-                                              );
-                                          })}
-                                          {!isExcelDriven && (
-                                              <td className="p-2 align-middle text-center bg-gray-50/30 w-24">
-                                                   <MediaCell 
-                                                       url={editFormData && editingId === record.id ? editFormData.imageUrl : record.imageUrl} 
-                                                       isEditable={editingId === record.id}
-                                                       onUpload={(e) => handleMediaUpload(record.id, null, e)}
-                                                       onClick={() => openMediaViewer(editingId === record.id ? editFormData?.imageUrl || '' : record.imageUrl || '', 'Photo/Doc')}
-                                                   />
-                                              </td>
-                                          )}
-                                          {canEdit && (
-                                            <td className="px-2 py-2 text-center sticky right-0 bg-white shadow-sm border-l border-gray-100">
-                                                {editingId === record.id ? (
-                                                    <div className="flex justify-center gap-1">
-                                                        <button onClick={handleSaveRow} className="p-1.5 bg-green-100 text-green-700 rounded hover:bg-green-200"><CheckCircle size={14}/></button>
-                                                        <button onClick={handleCancelEdit} className="p-1.5 bg-gray-100 text-gray-600 rounded hover:bg-gray-200"><X size={14}/></button>
-                                                    </div>
-                                                ) : (
-                                                    <div className="flex justify-center gap-1">
-                                                        <button onClick={() => handleStartEdit(record)} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded"><Edit size={14}/></button>
-                                                        {canStaffInsert && (
-                                                            <button 
-                                                                onClick={() => handleInsertRowAfter(record.id)} 
-                                                                className="p-1.5 text-green-600 hover:bg-green-50 rounded border border-transparent hover:border-green-200 transition-colors"
-                                                                title="Add Row Below"
-                                                            >
-                                                                <PlusCircle size={14} />
-                                                            </button>
-                                                        )}
-                                                        {canDelete && (<button onClick={() => initiateDeleteRow(record.id)} className="p-1.5 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded" title="Move to Recycle Bin"><Trash2 size={14}/></button>)}
-                                                    </div>
-                                                )}
-                                            </td>
-                                           )}
-                                      </tr>
-                                  )}) : (<tr><td colSpan={currentColumns.length + (!isExcelDriven ? 3 : 2)} className="px-6 py-10 text-center text-gray-400">No records found matching criteria.</td></tr>)}
+                                                       <div className="flex justify-center">
+                                                            {isRythuDetails ? (
+                                                               <PhotoCell 
+                                                                   url={record.imageUrl} 
+                                                                   isEditable={false} 
+                                                                   onUpload={(e) => handleDirectMediaUpload(record.id, null, e)}
+                                                                   onClick={() => openMediaViewer(record.imageUrl)}
+                                                               />
+                                                           ) : (
+                                                               <MediaCell 
+                                                                   url={record.imageUrl} 
+                                                                   isEditable={false} 
+                                                                   onUpload={(e) => handleDirectMediaUpload(record.id, null, e)}
+                                                                   onClick={() => openMediaViewer(record.imageUrl)}
+                                                               />
+                                                           )}
+                                                       </div>
+                                                    )}
+                                                </td>
+                                              )}
+                                              
+                                              {canEdit && (
+                                                  <td className="px-3 py-2 text-center align-middle w-24">
+                                                      <div className="flex items-center justify-center gap-2">
+                                                          {isEditing ? (
+                                                              <>
+                                                                  <button onClick={handleSaveRow} className="p-1.5 bg-green-100 text-green-700 rounded hover:bg-green-200 transition-colors" title="Save">
+                                                                      <Save size={16} />
+                                                                  </button>
+                                                                  <button onClick={handleCancelEdit} className="p-1.5 bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors" title="Cancel">
+                                                                      <X size={16} />
+                                                                  </button>
+                                                              </>
+                                                          ) : (
+                                                              <>
+                                                                  <button onClick={() => handleStartEdit(record)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded transition-colors" title="Edit Row">
+                                                                      <Edit size={16} />
+                                                                  </button>
+                                                                  
+                                                                  {/* Insert Row Below Button (For Staff/Admin) */}
+                                                                  {canStaffInsert && (
+                                                                      <button 
+                                                                         onClick={() => handleInsertRowAfter(record.id)} 
+                                                                         className="p-1.5 text-purple-600 hover:bg-purple-50 rounded transition-colors" 
+                                                                         title="Insert New Row Below"
+                                                                      >
+                                                                          <PlusCircle size={16} />
+                                                                      </button>
+                                                                  )}
+
+                                                                  {canDelete && (
+                                                                      <button onClick={() => initiateDeleteRow(record.id)} className="p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors" title="Delete Row">
+                                                                          <Trash2 size={16} />
+                                                                      </button>
+                                                                  )}
+                                                              </>
+                                                          )}
+                                                      </div>
+                                                  </td>
+                                              )}
+                                          </tr>
+                                      );
+                                  }) : (
+                                      <tr><td colSpan={currentColumns.length + 3} className="px-6 py-12 text-center text-gray-400 italic">No records found matching your search.</td></tr>
+                                  )}
                               </tbody>
                           </table>
                           )}
-                          <div ref={tableBottomRef} />
                       </div>
+                      
                       {totalPages > 1 && (
                           <div className="p-4 border-t border-gray-200 bg-gray-50 flex flex-col md:flex-row items-center justify-between gap-4 shrink-0 select-none">
-                            
-                            <div className="flex items-center gap-2">
-                                 <select
-                                    value={itemsPerPage}
-                                    onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
-                                    className="border border-gray-300 rounded-lg p-1 text-sm focus:ring-2 focus:ring-agri-500 outline-none"
-                                 >
-                                    <option value={10}>10 rows</option>
-                                    <option value={25}>25 rows</option>
-                                    <option value={50}>50 rows</option>
-                                    <option value={100}>100 rows</option>
-                                 </select>
-                                 <div className="text-sm text-gray-500 font-medium">
-                                    Showing <span className="font-bold text-gray-900">{(currentPage - 1) * itemsPerPage + 1}</span> to <span className="font-bold text-gray-900">{Math.min(currentPage * itemsPerPage, filteredRecords.length)}</span> of <span className="font-bold text-gray-900">{filteredRecords.length}</span>
-                                 </div>
-                            </div>
+                              <div className="flex items-center gap-2">
+                                   <select
+                                      value={itemsPerPage}
+                                      onChange={(e) => { setItemsPerPage(Number(e.target.value)); setCurrentPage(1); }}
+                                      className="border border-gray-300 rounded-lg p-1 text-sm focus:ring-2 focus:ring-agri-500 outline-none"
+                                   >
+                                      <option value={10}>10 rows</option>
+                                      <option value={25}>25 rows</option>
+                                      <option value={50}>50 rows</option>
+                                      <option value={100}>100 rows</option>
+                                   </select>
+                                   <div className="text-sm text-gray-500 font-medium">
+                                      Showing <span className="font-bold text-gray-900">{(currentPage - 1) * itemsPerPage + 1}</span> to <span className="font-bold text-gray-900">{Math.min(currentPage * itemsPerPage, filteredRecords.length)}</span> of <span className="font-bold text-gray-900">{filteredRecords.length}</span>
+                                   </div>
+                              </div>
 
-                            <div className="flex items-center gap-1.5 order-1 md:order-2">
-                                <button 
-                                    onClick={() => setCurrentPage(p => Math.max(1, p - 1))} 
-                                    disabled={currentPage === 1} 
-                                    className="px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-700 text-sm font-medium hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 transition-colors"
-                                >
-                                    <ChevronLeft size={16}/> Prev
-                                </button>
+                              <div className="flex items-center gap-1.5 order-1 md:order-2">
+                                  <button 
+                                      onClick={() => setCurrentPage(p => Math.max(1, p - 1))} 
+                                      disabled={currentPage === 1} 
+                                      className="px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-700 text-sm font-medium hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 transition-colors"
+                                  >
+                                      <ChevronLeft size={16}/> Prev
+                                  </button>
 
-                                <div className="flex items-center gap-1">
-                                    {getPaginationRange().map((pageNum, idx) => (
-                                        typeof pageNum === 'number' ? (
-                                            <button
-                                                key={idx}
-                                                onClick={() => setCurrentPage(pageNum)}
-                                                className={`w-8 h-8 flex items-center justify-center rounded-lg text-sm font-bold transition-all ${
-                                                    currentPage === pageNum 
-                                                    ? 'bg-corp-900 text-white shadow-md border border-corp-900' 
-                                                    : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-100'
-                                                }`}
-                                            >
-                                                {pageNum}
-                                            </button>
-                                        ) : (
-                                            <span key={idx} className="px-1 text-gray-400">...</span>
-                                        )
-                                    ))}
-                                </div>
+                                  <div className="flex items-center gap-1">
+                                      {getPaginationRange().map((pageNum, idx) => (
+                                          typeof pageNum === 'number' ? (
+                                              <button
+                                                  key={idx}
+                                                  onClick={() => setCurrentPage(pageNum)}
+                                                  className={`w-8 h-8 flex items-center justify-center rounded-lg text-sm font-bold transition-all ${
+                                                      currentPage === pageNum 
+                                                      ? 'bg-corp-900 text-white shadow-md border border-corp-900' 
+                                                      : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-100'
+                                                  }`}
+                                              >
+                                                  {pageNum}
+                                              </button>
+                                          ) : (
+                                              <span key={idx} className="px-1 text-gray-400">...</span>
+                                          )
+                                      ))}
+                                  </div>
 
-                                <button 
-                                    onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} 
-                                    disabled={currentPage === totalPages} 
-                                    className="px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-700 text-sm font-medium hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 transition-colors"
-                                >
-                                    Next <ChevronRight size={16}/>
-                                </button>
-                            </div>
+                                  <button 
+                                      onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))} 
+                                      disabled={currentPage === totalPages} 
+                                      className="px-3 py-1.5 rounded-lg border border-gray-300 bg-white text-gray-700 text-sm font-medium hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1 transition-colors"
+                                  >
+                                      Next <ChevronRight size={16}/>
+                                  </button>
+                              </div>
                           </div>
                       )}
                   </div>
               </div>
           )}
-          
-          {/* Report Tab */}
+
           {activeTab === 'report' && moduleType === 'AREGISTER' && (
-              <div className="flex-1 flex flex-col p-6 animate-in fade-in slide-in-from-right-4 overflow-auto">
-                 {summaryStats ? (
-                     <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden max-w-4xl mx-auto w-full">
-                         <div className="bg-gray-50 px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-                             <h3 className="font-bold text-lg text-gray-800">A-Register Summary Report</h3>
-                             {isAdmin && isSummaryEdited && (
-                                 <button onClick={saveSummary} className="flex items-center px-4 py-2 bg-green-600 text-white rounded-lg font-bold hover:bg-green-700 shadow-md transition-all animate-pulse">
-                                     <Save size={16} className="mr-2" /> Save Changes
-                                 </button>
-                             )}
-                         </div>
-                         <div className="p-8">
-                             <div className="grid grid-cols-1 md:grid-cols-2 gap-y-6 gap-x-12">
-                                 {[
-                                    { label: "Patta Dry", key: "pattaDry" },
-                                    { label: "Patta Wet", key: "pattaWet" },
-                                    { label: "Inam Dry", key: "inamDry" },
-                                    { label: "Inam Wet", key: "inamWet" },
-                                    { label: "Dotted Dry", key: "dottedDry" },
-                                    { label: "Dotted Wet", key: "dottedWet" },
-                                    { label: "UAW", key: "uaw" },
-                                    { label: "Poramboke", key: "poramboke" }
-                                 ].map((item) => (
-                                     <div key={item.key} className="flex justify-between items-center border-b border-gray-100 pb-2">
-                                         <label className="font-semibold text-gray-600">{item.label}</label>
-                                         <div className="flex items-center gap-2">
-                                             <input 
-                                                type="text" 
-                                                value={summaryStats[item.key as keyof ARegisterSummary] || 0} 
-                                                onChange={e => handleSummaryChange(item.key as keyof ARegisterSummary, e.target.value)}
-                                                className={`w-32 text-right font-mono font-bold text-gray-800 bg-gray-50 border border-transparent rounded px-2 py-1 focus:bg-white focus:border-blue-300 outline-none ${isAdmin ? '' : 'pointer-events-none'}`}
-                                             />
-                                             <span className="text-xs text-gray-400 font-bold w-8">Ac</span>
-                                         </div>
-                                     </div>
-                                 ))}
+               <div className="flex-1 overflow-auto bg-gray-50 p-6">
+                   <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-lg border border-gray-200 overflow-hidden">
+                       <div className="p-6 bg-gradient-to-r from-agri-600 to-agri-800 text-white flex justify-between items-center">
+                           <div>
+                               <h2 className="text-2xl font-bold flex items-center"><BarChart3 className="mr-3" size={28} /> A-Register Summary Report</h2>
+                               <p className="text-blue-100 text-sm mt-1">{selectedFile?.fileName}</p>
+                           </div>
+                           <button onClick={recalculateStats} className="px-4 py-2 bg-white/20 hover:bg-white/30 rounded-lg text-sm font-bold backdrop-blur-sm flex items-center">
+                               <RefreshCw size={16} className="mr-2"/> Recalculate
+                           </button>
+                       </div>
 
-                                 {/* Total */}
-                                 <div className="md:col-span-2 mt-4 pt-4 border-t-2 border-gray-100 flex justify-between items-center bg-blue-50 p-4 rounded-lg">
-                                     <label className="text-xl font-bold text-blue-800">Total Extent</label>
-                                     <div className="flex items-center gap-2">
-                                         <span className="text-2xl font-mono font-extrabold text-blue-900">
-                                            {summaryStats.totalextent.toFixed(2)}
-                                         </span>
-                                         <span className="text-sm text-blue-600 font-bold">Acres</span>
-                                     </div>
-                                 </div>
-                             </div>
-                             
-                             <div className="mt-8 flex justify-end gap-3">
-                                 <button onClick={recalculateStats} className="px-4 py-2 text-blue-600 hover:bg-blue-50 rounded-lg font-bold border border-blue-100 flex items-center">
-                                     <RefreshCw size={16} className="mr-2"/> Recalculate
-                                 </button>
-                             </div>
-                         </div>
-                     </div>
-                 ) : (
-                     <div className="flex-1 flex items-center justify-center text-gray-400">
-                         <div className="text-center">
-                             <BarChart3 size={48} className="mx-auto mb-2 opacity-30" />
-                             <p>No summary data available. Please upload a file.</p>
-                         </div>
-                     </div>
-                 )}
-              </div>
+                       <div className="p-8">
+                           {summaryStats ? (
+                               <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-8">
+                                   <div className="col-span-1 md:col-span-2 bg-blue-50 p-6 rounded-xl border border-blue-100 flex justify-between items-center mb-4">
+                                       <div>
+                                           <h3 className="text-lg font-bold text-blue-900 uppercase">Total Extent</h3>
+                                           <p className="text-sm text-blue-600">Sum of all categories</p>
+                                       </div>
+                                       <div className="text-4xl font-extrabold text-blue-700 flex items-baseline">
+                                           {summaryStats.totalextent.toFixed(2)} <span className="text-lg font-medium text-blue-400 ml-1">Acres</span>
+                                       </div>
+                                   </div>
+
+                                   {/* Editable Fields Grid */}
+                                   <div className="space-y-4">
+                                       <h4 className="font-bold text-gray-500 border-b pb-2 mb-4">Patta Lands</h4>
+                                       <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                                           <span className="font-medium text-gray-700">Patta Dry</span>
+                                           <input 
+                                              type="number" 
+                                              className="w-32 p-2 border border-gray-300 rounded text-right font-bold focus:ring-2 focus:ring-blue-500 outline-none"
+                                              value={summaryStats.pattaDry}
+                                              onChange={(e) => handleSummaryChange('pattaDry', e.target.value)}
+                                           />
+                                       </div>
+                                       <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                                           <span className="font-medium text-gray-700">Patta Wet</span>
+                                           <input 
+                                              type="number" 
+                                              className="w-32 p-2 border border-gray-300 rounded text-right font-bold focus:ring-2 focus:ring-blue-500 outline-none"
+                                              value={summaryStats.pattaWet}
+                                              onChange={(e) => handleSummaryChange('pattaWet', e.target.value)}
+                                           />
+                                       </div>
+                                   </div>
+
+                                   <div className="space-y-4">
+                                       <h4 className="font-bold text-gray-500 border-b pb-2 mb-4">Inam Lands</h4>
+                                       <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                                           <span className="font-medium text-gray-700">Inam Dry</span>
+                                           <input 
+                                              type="number" 
+                                              className="w-32 p-2 border border-gray-300 rounded text-right font-bold focus:ring-2 focus:ring-blue-500 outline-none"
+                                              value={summaryStats.inamDry}
+                                              onChange={(e) => handleSummaryChange('inamDry', e.target.value)}
+                                           />
+                                       </div>
+                                       <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                                           <span className="font-medium text-gray-700">Inam Wet</span>
+                                           <input 
+                                              type="number" 
+                                              className="w-32 p-2 border border-gray-300 rounded text-right font-bold focus:ring-2 focus:ring-blue-500 outline-none"
+                                              value={summaryStats.inamWet}
+                                              onChange={(e) => handleSummaryChange('inamWet', e.target.value)}
+                                           />
+                                       </div>
+                                   </div>
+                                   
+                                   <div className="space-y-4">
+                                       <h4 className="font-bold text-gray-500 border-b pb-2 mb-4">Dotted Lands</h4>
+                                       <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                                           <span className="font-medium text-gray-700">Dotted Dry</span>
+                                           <input 
+                                              type="number" 
+                                              className="w-32 p-2 border border-gray-300 rounded text-right font-bold focus:ring-2 focus:ring-blue-500 outline-none"
+                                              value={summaryStats.dottedDry}
+                                              onChange={(e) => handleSummaryChange('dottedDry', e.target.value)}
+                                           />
+                                       </div>
+                                       <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                                           <span className="font-medium text-gray-700">Dotted Wet</span>
+                                           <input 
+                                              type="number" 
+                                              className="w-32 p-2 border border-gray-300 rounded text-right font-bold focus:ring-2 focus:ring-blue-500 outline-none"
+                                              value={summaryStats.dottedWet}
+                                              onChange={(e) => handleSummaryChange('dottedWet', e.target.value)}
+                                           />
+                                       </div>
+                                   </div>
+
+                                   <div className="space-y-4">
+                                       <h4 className="font-bold text-gray-500 border-b pb-2 mb-4">Other Lands</h4>
+                                       <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                                           <span className="font-medium text-gray-700">Unassessed Waste (UAW)</span>
+                                           <input 
+                                              type="number" 
+                                              className="w-32 p-2 border border-gray-300 rounded text-right font-bold focus:ring-2 focus:ring-blue-500 outline-none"
+                                              value={summaryStats.uaw}
+                                              onChange={(e) => handleSummaryChange('uaw', e.target.value)}
+                                           />
+                                       </div>
+                                       <div className="flex justify-between items-center p-3 bg-gray-50 rounded-lg">
+                                           <span className="font-medium text-gray-700">Poramboke</span>
+                                           <input 
+                                              type="number" 
+                                              className="w-32 p-2 border border-gray-300 rounded text-right font-bold focus:ring-2 focus:ring-blue-500 outline-none"
+                                              value={summaryStats.poramboke}
+                                              onChange={(e) => handleSummaryChange('poramboke', e.target.value)}
+                                           />
+                                       </div>
+                                   </div>
+                               </div>
+                           ) : (
+                               <div className="p-10 text-center text-gray-400">
+                                   Summary not calculated yet.
+                               </div>
+                           )}
+
+                           {isSummaryEdited && (
+                               <div className="mt-8 flex justify-end animate-in fade-in slide-in-from-bottom-2">
+                                   <button onClick={saveSummary} className="px-8 py-3 bg-green-600 text-white rounded-lg font-bold shadow-lg hover:bg-green-700 transition-all flex items-center">
+                                       <Save size={20} className="mr-2"/> Save Report
+                                   </button>
+                               </div>
+                           )}
+                       </div>
+                   </div>
+               </div>
           )}
-
         </div>
       )}
     </>
