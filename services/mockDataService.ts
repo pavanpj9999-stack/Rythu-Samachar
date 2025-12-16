@@ -124,37 +124,41 @@ const chunkArray = <T>(array: T[], size: number): T[][] => {
 };
 
 // --- HYBRID DATA SERVICE CONFIGURATION ---
-// Determine if we should attempt cloud connection
-// If db is null (from firebase.ts import), we force offline.
 let isOfflineMode = !db;
 
+// Robust Execution Strategy: Firebase -> REST API -> Local IndexedDB
 const execute = async <T>(
-    cloudFn: () => Promise<T>,
-    localFn: () => Promise<T>
+    firebaseFn: () => Promise<T>,
+    localFn: () => Promise<T>,
+    apiFallbackFn?: () => Promise<T | null>
 ): Promise<T> => {
-    if (isOfflineMode) return localFn();
-    try {
-        if (!db) throw new Error("Firebase DB not initialized");
-        return await cloudFn();
-    } catch (error: any) {
-        // Detect permission denied or connection errors
-        if (error?.code === 'permission-denied' || error?.code === 'unavailable' || error?.code === 'failed-precondition' || error?.name === 'FirebaseError') {
-            if (!isOfflineMode) {
-                console.warn(`Cloud Error (${error.code || 'Connection Failed'}). Switching to Offline Mode.`);
-                isOfflineMode = true;
-                // Initialize local admin if switching to offline for the first time
-                DataService.initializeLocal();
-            }
-            return localFn();
+    // 1. Try Firebase if configured
+    if (db) {
+        try {
+            return await firebaseFn();
+        } catch (error: any) {
+            console.warn(`Firebase Error (${error.code}). Attempting Fallback.`);
+            // Fallthrough to API/Local
         }
-        throw error;
     }
+
+    // 2. Try REST API if provided
+    if (apiFallbackFn && API_BASE && !API_BASE.includes("localhost")) {
+        try {
+            const apiResult = await apiFallbackFn();
+            if (apiResult !== null) return apiResult;
+        } catch (e) {
+            console.warn("API Sync Error:", e);
+        }
+    }
+
+    // 3. Fallback to Local IndexedDB
+    return localFn();
 };
 
 const otpStore: Record<string, { code: string, expires: number }> = {};
 
 export const DataService = {
-  // Method to check connectivity status in UI
   isOffline: () => isOfflineMode,
 
   initialize: async () => {
@@ -166,7 +170,7 @@ export const DataService = {
       }
 
       try {
-          // Attempt Cloud Connection (Read Admin)
+          // Attempt Cloud Connection
           const usersRef = collection(db, 'users');
           const adminQ = query(usersRef, where('email', '==', 'sanju.pavan11@gmail.com'));
           const snapshot = await getDocs(adminQ);
@@ -185,10 +189,7 @@ export const DataService = {
               };
               await setDoc(doc(db, 'users', adminUser.id), adminUser);
           }
-          
-          // IMPORTANT: Pre-fetch all users to cache for sync operations (Admin Dashboard)
           await DataService.fetchUsers();
-
       } catch (e) {
           console.log("Initializing Offline Mode due to Cloud Error:", e);
           isOfflineMode = true;
@@ -239,6 +240,10 @@ export const DataService = {
           async () => {
               const allFiles = await dbGetAll<ARegisterFile>(STORES.FILES);
               return allFiles.filter(f => f.module === module).sort((a,b) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime());
+          },
+          async () => {
+              const res = await axios.get(`${API_BASE}/files?module=${module}`);
+              return res.data;
           }
       );
   },
@@ -333,11 +338,14 @@ export const DataService = {
 
       return execute(
           async () => {
-              let q = fileId ? query(collection(db, 'records'), where('fileId', '==', fileId)) : query(collection(db, 'records'));
+              let q = fileId ? query(collection(db, 'records'), where('fileId', '==', fileId)) : query(collection(db, 'records')); // Simplified query to allow client filtering if needed or index issues
+              // Optimization: if no fileId, try to filter by module if possible, but schema is flat. 
+              // Better to fetch all and filter in memory if volume permits, or rely on fileId.
               const snapshot = await getDocs(q);
               let records = snapshot.docs.map(d => d.data() as DynamicRecord);
-              // Client-side filter if fetching all (fallback)
+              
               if (!fileId) {
+                  // Filter by Module Association via File
                   const files = await DataService.getModuleFiles(module);
                   const fileIds = files.map(f => f.id);
                   records = records.filter(r => fileIds.includes(r.fileId || ''));
@@ -360,25 +368,29 @@ export const DataService = {
                   resultRecords = all.filter(r => r.fileId && fileIds.has(r.fileId));
               }
               return processRecords(resultRecords);
+          },
+          async () => {
+              // REST API Fallback
+              const url = fileId 
+                  ? `${API_BASE}/records?module=${module}&fileId=${fileId}`
+                  : `${API_BASE}/records?module=${module}`;
+              const res = await axios.get(url);
+              return processRecords(res.data);
           }
       );
   },
 
   saveModuleRecords: async (module: ModuleType, newRecords: DynamicRecord[]) => {
-      // ATTEMPT REST API SYNC (Non-blocking)
-      // This ensures edits are sent to the backend server if available
-      try {
-          if (API_BASE && !API_BASE.includes("localhost") && newRecords.length > 0) {
-              axios.post(`${API_BASE}/records/batch`, {
-                  module,
-                  records: newRecords,
-                  timestamp: new Date().toISOString()
-              }).catch(err => console.warn("Background API Sync Failed:", err));
-          }
-      } catch (e) {
-          // Ignore sync errors to prevent blocking UI
+      // 1. Sync to API (Fire and Forget)
+      if (API_BASE && !API_BASE.includes("localhost") && newRecords.length > 0) {
+          axios.post(`${API_BASE}/records/batch`, {
+              module,
+              records: newRecords,
+              timestamp: new Date().toISOString()
+          }).catch(err => console.warn("Background API Sync Failed:", err));
       }
 
+      // 2. Persist to Storage
       return execute(
           async () => {
               const chunks = chunkArray(newRecords, 400);
@@ -560,7 +572,6 @@ export const DataService = {
           if (sourceModule === 'KML') target = 'kml';
           if (sourceModule && sourceModule.endsWith('_FILE')) target = 'files';
           
-          // Map to store names for local
           let localTarget = STORES.RECORDS;
           if (sourceModule === 'FMB') localTarget = STORES.FMB;
           if (sourceModule === 'KML') localTarget = STORES.KML;
@@ -710,7 +721,11 @@ export const DataService = {
   getAllAttendance: async (): Promise<AttendanceRecord[]> => {
       return execute(
           async () => { const s = await getDocs(collection(db, 'attendance')); return s.docs.map(d => d.data() as AttendanceRecord); },
-          async () => { return dbGetAll<AttendanceRecord>(STORES.ATTENDANCE); }
+          async () => { return dbGetAll<AttendanceRecord>(STORES.ATTENDANCE); },
+          async () => {
+              const res = await axios.get(`${API_BASE}/attendance`);
+              return res.data;
+          }
       );
   },
 
@@ -737,7 +752,6 @@ export const DataService = {
 
   // --- AUTH ---
   getAllUsers: () => {
-      // Sync return for UI compatibility (reads from localStorage cache)
       const usersStr = localStorage.getItem('rythu_samachar_users');
       return usersStr ? JSON.parse(usersStr) : [];
   },
@@ -747,11 +761,15 @@ export const DataService = {
           async () => {
               const snap = await getDocs(collection(db, 'users'));
               const users = snap.docs.map(d => d.data() as User);
-              // Update local cache
               localStorage.setItem('rythu_samachar_users', JSON.stringify(users));
               return users;
           },
-          async () => { return DataService.getAllUsers(); }
+          async () => { return DataService.getAllUsers(); },
+          async () => {
+              const res = await axios.get(`${API_BASE}/users`);
+              if(res.data) localStorage.setItem('rythu_samachar_users', JSON.stringify(res.data));
+              return res.data;
+          }
       );
   },
 

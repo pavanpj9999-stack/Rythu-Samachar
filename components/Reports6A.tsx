@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { DataService, AuthService } from '../services/mockDataService';
 import { DynamicRecord, UserRole, User } from '../types';
-import { LayoutDashboard, Loader2, RefreshCw, User as UserIcon, CheckCircle, Upload, Edit, PlusCircle, Activity, Eraser, AlertTriangle, X, Calendar, Search, Filter, FileText, FileSpreadsheet, ChevronLeft, ChevronRight, Clock, Shield, MonitorPlay, Database, PieChart } from 'lucide-react';
+import { LayoutDashboard, Loader2, RefreshCw, User as UserIcon, CheckCircle, Upload, Edit, PlusCircle, Activity, Eraser, AlertTriangle, X, Calendar, Search, Filter, FileText, FileSpreadsheet, ChevronLeft, ChevronRight, Clock, Shield, MonitorPlay, Database, PieChart, Zap } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
@@ -38,6 +38,7 @@ export const Reports6A: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [lastRefreshed, setLastRefreshed] = useState<string>('');
   const [total6ACount, setTotal6ACount] = useState(0);
+  const [isLiveMode, setIsLiveMode] = useState(false);
   
   // Data State
   const [allRecords, setAllRecords] = useState<DynamicRecord[]>([]);
@@ -67,7 +68,20 @@ export const Reports6A: React.FC = () => {
 
   useEffect(() => {
     loadDashboardData();
+    // Default to Live Mode for Admins
+    if(isAdmin) setIsLiveMode(true);
   }, []);
+
+  // Live Auto-Refresh Effect
+  useEffect(() => {
+      let interval: any;
+      if (isLiveMode && activeTab === 'activity') {
+          interval = setInterval(() => {
+              loadDashboardData(true); // silent refresh
+          }, 30000); // 30 seconds refresh
+      }
+      return () => clearInterval(interval);
+  }, [isLiveMode, activeTab]);
 
   // Filter Effect
   useEffect(() => {
@@ -76,8 +90,8 @@ export const Reports6A: React.FC = () => {
       }
   }, [historyLogs, modalSearch, modalFromDate, modalToDate, modalActionFilter]);
 
-  const loadDashboardData = async () => {
-    setLoading(true);
+  const loadDashboardData = async (silent = false) => {
+    if(!silent) setLoading(true);
     
     // 1. Fetch Staff Users (Exclude Admin if you only want 'Teams')
     const allUsers = AuthService.getAllUsers();
@@ -376,16 +390,25 @@ export const Reports6A: React.FC = () => {
            {activeTab === 'activity' && (
            <div className="flex items-center gap-4">
                {isAdmin && (
-                   <button 
-                      onClick={handleClearHighlights}
-                      className="flex items-center px-4 py-2 bg-pink-50 text-pink-700 border border-pink-200 rounded-lg font-bold hover:bg-pink-100 transition-colors shadow-sm"
-                   >
-                       <Eraser size={18} className="mr-2"/> Clear Highlights
-                   </button>
+                   <>
+                       <button 
+                          onClick={() => setIsLiveMode(!isLiveMode)}
+                          className={`flex items-center px-4 py-2 border rounded-lg font-bold transition-all shadow-sm ${isLiveMode ? 'bg-red-50 text-red-600 border-red-200 animate-pulse' : 'bg-gray-100 text-gray-600 border-gray-200'}`}
+                          title={isLiveMode ? "Click to Pause Live Updates" : "Click to Enable Live Updates"}
+                       >
+                           <Zap size={18} className="mr-2"/> {isLiveMode ? 'LIVE SYNC ON' : 'Live Sync Off'}
+                       </button>
+                       <button 
+                          onClick={handleClearHighlights}
+                          className="flex items-center px-4 py-2 bg-pink-50 text-pink-700 border border-pink-200 rounded-lg font-bold hover:bg-pink-100 transition-colors shadow-sm"
+                       >
+                           <Eraser size={18} className="mr-2"/> Clear Highlights
+                       </button>
+                   </>
                )}
                <span className="text-xs text-gray-400 font-mono hidden md:inline">Refreshed: {lastRefreshed}</span>
                <button 
-                  onClick={loadDashboardData} 
+                  onClick={() => loadDashboardData()} 
                   className="flex items-center px-4 py-2 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg font-bold hover:bg-blue-100 transition-colors shadow-sm"
                   disabled={loading}
                >
