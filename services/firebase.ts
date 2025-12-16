@@ -3,34 +3,31 @@ import { getFirestore } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 import { getAuth } from 'firebase/auth';
 
-// --- MANUAL CONFIGURATION ---
-// IMPORTANT: If your deployment keys fail, paste them directly inside the quotes below.
+// --- PASTE YOUR KEYS HERE ---
+// 1. Go to console.firebase.google.com
+// 2. Select your project > Project Settings (Gear Icon) > General
+// 3. Scroll down to "Your apps" and copy the config values
 const manualConfig = {
-  apiKey: "", 
-  authDomain: "",
-  projectId: "",
-  storageBucket: "",
-  messagingSenderId: "",
-  appId: ""
+  apiKey: "PASTE_YOUR_API_KEY_HERE",             // e.g. "AIzaSy..."
+  authDomain: "PASTE_YOUR_AUTH_DOMAIN_HERE",     // e.g. "rythu-app.firebaseapp.com"
+  projectId: "PASTE_YOUR_PROJECT_ID_HERE",       // e.g. "rythu-app"
+  storageBucket: "PASTE_YOUR_STORAGE_BUCKET_HERE", // e.g. "rythu-app.appspot.com"
+  messagingSenderId: "PASTE_YOUR_SENDER_ID_HERE", // e.g. "123456789"
+  appId: "PASTE_YOUR_APP_ID_HERE"                // e.g. "1:12345:web:abcdef"
 };
 
 // --- CONFIGURATION LOGIC ---
 const getKey = (keyName: string, manualValue: string) => {
-    // 1. Prioritize Manual Value
-    if (manualValue && manualValue.trim() !== "") return manualValue;
+    // 1. Prioritize Manual Value (if pasted above)
+    if (manualValue && manualValue !== "PASTE_YOUR_API_KEY_HERE" && manualValue !== "PASTE_YOUR_AUTH_DOMAIN_HERE" && !manualValue.includes("PASTE_YOUR")) {
+        return manualValue;
+    }
     
-    // 2. Try Vite's import.meta.env
+    // 2. Try Vite's import.meta.env (for deployed environments)
     // @ts-ignore
     if (import.meta.env && import.meta.env[`VITE_${keyName}`]) {
         // @ts-ignore
         return import.meta.env[`VITE_${keyName}`];
-    }
-
-    // 3. Try process.env
-    // @ts-ignore
-    if (typeof process !== 'undefined' && process.env && process.env[keyName]) {
-        // @ts-ignore
-        return process.env[keyName];
     }
 
     return undefined;
@@ -47,17 +44,21 @@ const firebaseConfig = {
 
 // --- INITIALIZATION ---
 let app = null;
+let firestoreDb = null;
+let firestoreStorage = null;
+let firestoreAuth = null;
 
 // Validation
 const isConfigValid = 
     firebaseConfig.apiKey && 
-    firebaseConfig.apiKey !== "YOUR_API_KEY_HERE" &&
-    !String(firebaseConfig.apiKey).includes("undefined") &&
-    firebaseConfig.projectId;
+    !firebaseConfig.apiKey.includes("PASTE_YOUR");
 
 if (isConfigValid) {
     try {
         app = initializeApp(firebaseConfig);
+        firestoreDb = getFirestore(app);
+        firestoreStorage = getStorage(app);
+        firestoreAuth = getAuth(app);
         console.log("✅ Firebase Connected: " + firebaseConfig.projectId);
     } catch (e: any) {
         if (e.code === 'app/duplicate-app') {
@@ -67,23 +68,11 @@ if (isConfigValid) {
         }
     }
 } else {
-    console.warn("⚠️ Firebase Keys Missing. App running in OFFLINE MODE (Data will not sync).");
-    console.log("Please add keys to your hosting environment variables OR paste them in services/firebase.ts manualConfig");
+    console.warn("⚠️ Firebase Keys Missing. App running in DEMO MODE (Offline). Data will not sync.");
 }
 
-// Safely initialize services
-const safelyInitialize = (initFn: (app: any) => any, serviceName: string) => {
-    if (!app) return null;
-    try {
-        return initFn(app);
-    } catch (e) {
-        console.error(`${serviceName} failed to start.`, e);
-        return null;
-    }
-};
-
-export const db = safelyInitialize(getFirestore, 'Firestore');
-export const storage = safelyInitialize(getStorage, 'Storage');
-export const auth = safelyInitialize(getAuth, 'Auth');
+export const db = firestoreDb;
+export const storage = firestoreStorage;
+export const auth = firestoreAuth;
 
 export default app;

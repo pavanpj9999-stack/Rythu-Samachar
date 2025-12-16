@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { LogOut, LayoutDashboard, Database, Users, Menu, X, FileText, Spline, GitCompare, UserCheck, Shield, ChevronRight, Upload, Trash2, Lock, Camera, Cloud, CloudOff } from 'lucide-react';
+import { LogOut, LayoutDashboard, Database, Users, Menu, X, FileText, Spline, GitCompare, UserCheck, Shield, ChevronRight, Upload, Trash2, Lock, Camera, Cloud, CloudOff, AlertTriangle } from 'lucide-react';
 import { User, UserRole } from '../types';
 import { RythuLogo } from './RythuLogo';
 import { DataService } from '../services/mockDataService';
@@ -147,12 +147,12 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout, active
           <div className="flex items-center space-x-8">
             {/* Status Indicator */}
             {isOffline ? (
-                <div className="flex items-center text-amber-600 bg-amber-50 px-3 py-1 rounded-full text-xs font-bold border border-amber-200 animate-pulse" title="Data saved locally. Not syncing to other devices.">
-                    <CloudOff size={14} className="mr-1.5"/> Local Mode
+                <div className="flex items-center text-red-600 bg-red-50 px-4 py-2 rounded-full text-xs font-bold border border-red-200 animate-pulse shadow-sm cursor-help" title="CRITICAL: You are running in Offline Mode because API keys are missing. Data saved will NOT appear on other devices.">
+                    <AlertTriangle size={16} className="mr-2"/> OFFLINE MODE (Data Not Syncing)
                 </div>
             ) : (
                 <div className="flex items-center text-green-600 bg-green-50 px-3 py-1 rounded-full text-xs font-bold border border-green-200" title="Connected to Cloud Database">
-                    <Cloud size={14} className="mr-1.5"/> Cloud Sync
+                    <Cloud size={14} className="mr-1.5"/> Cloud Sync Active
                 </div>
             )}
 

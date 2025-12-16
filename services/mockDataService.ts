@@ -1,7 +1,7 @@
 import { User, UserRole, DashboardStats, FMBRecord, KMLRecord, ARegisterFile, RecycleBinRecord, DynamicRecord, ModuleType, ARegisterSummary, AttendanceRecord } from '../types';
 import { db, storage } from './firebase';
 import { 
-  collection, getDocs, doc, setDoc, updateDoc, deleteDoc, query, where, writeBatch, getDoc 
+  collection, getDocs, doc, setDoc, updateDoc, deleteDoc, query, where, writeBatch 
 } from 'firebase/firestore';
 import { ref, uploadString, getDownloadURL } from 'firebase/storage';
 
@@ -90,15 +90,15 @@ const uploadBase64ToStorage = async (base64String: string, path: string): Promis
     if (!base64String || (!base64String.startsWith('data:image') && !base64String.startsWith('data:application'))) return base64String;
     
     // Fallback: If offline or no storage config, return base64
-    if (isOfflineMode || !storage) return base64String;
+    if (!storage) return base64String;
 
     try {
         const storageRef = ref(storage, path);
         await uploadString(storageRef, base64String, 'data_url');
         return await getDownloadURL(storageRef);
     } catch (e) {
-        console.warn("Cloud Upload Failed (Offline Mode):", e);
-        return base64String; 
+        console.warn("Cloud Upload Failed, using Local Base64:", e);
+        return base64String;
     }
 };
 
@@ -122,30 +122,21 @@ const chunkArray = <T>(array: T[], size: number): T[][] => {
 };
 
 // --- HYBRID DATA SERVICE CONFIGURATION ---
-// Determine if we should attempt cloud connection
-// If db is null (from firebase.ts import), we force offline.
-let isOfflineMode = !db;
-
 const execute = async <T>(
     cloudFn: () => Promise<T>,
     localFn: () => Promise<T>
 ): Promise<T> => {
-    if (isOfflineMode) return localFn();
+    // 1. If keys are missing (db is null), we MUST use local.
+    if (!db) {
+        return localFn();
+    }
+
+    // 2. Try Cloud, Fallback to Local if fails
     try {
-        if (!db) throw new Error("Firebase DB not initialized");
         return await cloudFn();
     } catch (error: any) {
-        // Detect permission denied or connection errors
-        if (error?.code === 'permission-denied' || error?.code === 'unavailable' || error?.code === 'failed-precondition' || error?.name === 'FirebaseError') {
-            if (!isOfflineMode) {
-                console.warn(`Cloud Error (${error.code || 'Connection Failed'}). Switching to Offline Mode.`);
-                isOfflineMode = true;
-                // Initialize local admin if switching to offline for the first time
-                DataService.initializeLocal();
-            }
-            return localFn();
-        }
-        throw error;
+        console.warn("Cloud Operation Failed, Switching to Offline:", error);
+        return localFn();
     }
 };
 
@@ -153,17 +144,19 @@ const otpStore: Record<string, { code: string, expires: number }> = {};
 
 export const DataService = {
   // Method to check connectivity status in UI
-  isOffline: () => isOfflineMode,
+  isOffline: () => !db,
 
   initialize: async () => {
+      // 1. Initialize Local Admin (Always ensure one exists locally)
+      DataService.initializeLocal();
+
       if (!db) {
-          console.log("Firebase not configured. Initializing Offline Mode (IndexedDB).");
-          isOfflineMode = true;
-          DataService.initializeLocal();
+          console.log("Running in DEMO MODE (Offline).");
           return;
       }
 
       try {
+          console.log("Initializing Cloud Data Service...");
           // Attempt Cloud Connection (Read Admin)
           const usersRef = collection(db, 'users');
           const adminQ = query(usersRef, where('email', '==', 'sanju.pavan11@gmail.com'));
@@ -182,15 +175,12 @@ export const DataService = {
                 dob: '1990-01-01'
               };
               await setDoc(doc(db, 'users', adminUser.id), adminUser);
+              console.log("Admin User Created in Cloud.");
+          } else {
+              console.log("Connected to Cloud. Admin found.");
           }
-          
-          // IMPORTANT: Pre-fetch all users to cache for sync operations (Admin Dashboard)
-          await DataService.fetchUsers();
-
       } catch (e) {
-          console.log("Initializing Offline Mode due to Cloud Error:", e);
-          isOfflineMode = true;
-          DataService.initializeLocal();
+          console.warn("Cloud Init Failed (likely offline):", e);
       }
   },
 
@@ -230,7 +220,7 @@ export const DataService = {
   getModuleFiles: async (module: ModuleType): Promise<ARegisterFile[]> => {
       return execute(
           async () => {
-              const q = query(collection(db, 'files'), where('module', '==', module));
+              const q = query(collection(db!, 'files'), where('module', '==', module));
               const snapshot = await getDocs(q);
               return snapshot.docs.map(d => d.data() as ARegisterFile).sort((a,b) => new Date(b.uploadDate).getTime() - new Date(a.uploadDate).getTime());
           },
@@ -245,7 +235,7 @@ export const DataService = {
       return execute(
           async () => {
               const fileWithModule = { ...file, module };
-              await setDoc(doc(db, 'files', file.id), fileWithModule);
+              await setDoc(doc(db!, 'files', file.id), fileWithModule);
           },
           async () => {
               const fileWithModule = { ...file, module };
@@ -256,7 +246,7 @@ export const DataService = {
 
   updateModuleFileColumns: async (module: ModuleType, fileId: string, newColumns: string[]) => {
       return execute(
-          async () => { await updateDoc(doc(db, 'files', fileId), { columns: newColumns }); },
+          async () => { await updateDoc(doc(db!, 'files', fileId), { columns: newColumns }); },
           async () => {
               const files = await dbGetAll<ARegisterFile>(STORES.FILES);
               const file = files.find(f => f.id === fileId);
@@ -268,12 +258,12 @@ export const DataService = {
   deleteModuleFile: async (module: ModuleType, fileId: string) => {
       return execute(
           async () => {
-              await deleteDoc(doc(db, 'files', fileId));
-              const q = query(collection(db, 'records'), where('fileId', '==', fileId));
+              await deleteDoc(doc(db!, 'files', fileId));
+              const q = query(collection(db!, 'records'), where('fileId', '==', fileId));
               const snapshot = await getDocs(q);
               const batchChunks = chunkArray(snapshot.docs, 400);
               for (const chunk of batchChunks) {
-                  const batch = writeBatch(db);
+                  const batch = writeBatch(db!);
                   chunk.forEach((d: any) => batch.delete(d.ref));
                   await batch.commit();
               }
@@ -294,16 +284,16 @@ export const DataService = {
   softDeleteModuleFile: async (module: ModuleType, fileId: string, deletedBy: string): Promise<boolean> => {
       return execute(
           async () => {
-              const q = query(collection(db, 'files'), where('id', '==', fileId));
+              const q = query(collection(db!, 'files'), where('id', '==', fileId));
               const snap = await getDocs(q);
               if (snap.empty) return false;
               const fileData = snap.docs[0].data() as ARegisterFile;
               const binItem: RecycleBinRecord = {
                   id: fileId, fileId, deletedAt: new Date().toISOString(), deletedBy, originalFileId: fileId, sourceModule: `${module}_FILE`, originalData: fileData, fileName: fileData.fileName
               };
-              const batch = writeBatch(db);
-              batch.set(doc(db, 'recycle_bin', fileId), binItem);
-              batch.delete(doc(db, 'files', fileId));
+              const batch = writeBatch(db!);
+              batch.set(doc(db!, 'recycle_bin', fileId), binItem);
+              batch.delete(doc(db!, 'files', fileId));
               await batch.commit();
               return true;
           },
@@ -331,7 +321,7 @@ export const DataService = {
 
       return execute(
           async () => {
-              let q = fileId ? query(collection(db, 'records'), where('fileId', '==', fileId)) : query(collection(db, 'records'));
+              let q = fileId ? query(collection(db!, 'records'), where('fileId', '==', fileId)) : query(collection(db!, 'records'));
               const snapshot = await getDocs(q);
               let records = snapshot.docs.map(d => d.data() as DynamicRecord);
               // Client-side filter if fetching all (fallback)
@@ -367,7 +357,7 @@ export const DataService = {
           async () => {
               const chunks = chunkArray(newRecords, 400);
               for (const chunk of chunks) {
-                  const batch = writeBatch(db);
+                  const batch = writeBatch(db!);
                   await Promise.all(chunk.map(async (record) => {
                       if (record.imageUrl && record.imageUrl.startsWith('data:')) {
                           record.imageUrl = await uploadBase64ToStorage(record.imageUrl, `records/${module}/${record.id}_img`);
@@ -378,7 +368,7 @@ export const DataService = {
                               record[key] = await uploadBase64ToStorage(val, `records/${module}/${record.id}_${key}`);
                           }
                       }
-                      const ref = doc(db, 'records', record.id);
+                      const ref = doc(db!, 'records', record.id);
                       batch.set(ref, record, { merge: true });
                   }));
                   await batch.commit();
@@ -400,9 +390,9 @@ export const DataService = {
               const records = await DataService.getModuleRecords(module);
               const chunks = chunkArray(records, 400);
               for (const chunk of chunks) {
-                  const batch = writeBatch(db);
+                  const batch = writeBatch(db!);
                   chunk.forEach(r => {
-                      const ref = doc(db, 'records', r.id);
+                      const ref = doc(db!, 'records', r.id);
                       batch.update(ref, { is_highlighted: 0, is_modified: 0 });
                   });
                   await batch.commit();
@@ -421,7 +411,7 @@ export const DataService = {
   getARegisterSummary: async (fileId: string): Promise<ARegisterSummary | undefined> => {
       return execute(
           async () => {
-              const snap = await getDocs(query(collection(db, 'summaries'), where('fileId', '==', fileId)));
+              const snap = await getDocs(query(collection(db!, 'summaries'), where('fileId', '==', fileId)));
               return !snap.empty ? snap.docs[0].data() as ARegisterSummary : undefined;
           },
           async () => {
@@ -432,7 +422,7 @@ export const DataService = {
 
   saveARegisterSummary: async (summary: ARegisterSummary) => {
       return execute(
-          async () => { await setDoc(doc(db, 'summaries', summary.fileId), summary); },
+          async () => { await setDoc(doc(db!, 'summaries', summary.fileId), summary); },
           async () => { await dbOp(STORES.SUMMARIES, 'readwrite', store => store.put(summary)); }
       );
   },
@@ -441,7 +431,7 @@ export const DataService = {
   getRecycleBin: async (): Promise<RecycleBinRecord[]> => {
       return execute(
           async () => {
-              const snap = await getDocs(collection(db, 'recycle_bin'));
+              const snap = await getDocs(collection(db!, 'recycle_bin'));
               return snap.docs.map(d => d.data() as RecycleBinRecord);
           },
           async () => { return dbGetAll<RecycleBinRecord>(STORES.RECYCLE_BIN); }
@@ -451,10 +441,10 @@ export const DataService = {
   emptyRecycleBin: async () => {
       return execute(
           async () => {
-              const snap = await getDocs(collection(db, 'recycle_bin'));
+              const snap = await getDocs(collection(db!, 'recycle_bin'));
               const chunks = chunkArray(snap.docs, 400);
               for (const chunk of chunks) {
-                  const batch = writeBatch(db);
+                  const batch = writeBatch(db!);
                   chunk.forEach((d: any) => batch.delete(d.ref));
                   await batch.commit();
               }
@@ -466,13 +456,13 @@ export const DataService = {
   softDeleteRecord: async (module: ModuleType, id: string, deletedBy: string): Promise<boolean> => {
       return execute(
           async () => {
-              const snap = await getDocs(query(collection(db, 'records'), where('id', '==', id)));
+              const snap = await getDocs(query(collection(db!, 'records'), where('id', '==', id)));
               if (snap.empty) return false;
               const record = snap.docs[0].data() as DynamicRecord;
               const binItem: RecycleBinRecord = { ...record, deletedAt: new Date().toISOString(), deletedBy, originalFileId: record.fileId || 'unknown', sourceModule: `${module}_ROW`, originalData: record };
-              const batch = writeBatch(db);
-              batch.set(doc(db, 'recycle_bin', id), binItem);
-              batch.delete(doc(db, 'records', id));
+              const batch = writeBatch(db!);
+              batch.set(doc(db!, 'recycle_bin', id), binItem);
+              batch.delete(doc(db!, 'records', id));
               await batch.commit();
               return true;
           },
@@ -499,9 +489,9 @@ export const DataService = {
 
       return execute(
           async () => doSoftDelete(
-              async () => { const s = await getDocs(query(collection(db, 'fmb'), where('id', '==', id))); return s.empty ? null : s.docs[0].data(); },
-              async (item) => { await setDoc(doc(db, 'recycle_bin', id), item); },
-              async (id) => { await deleteDoc(doc(db, 'fmb', id)); }
+              async () => { const s = await getDocs(query(collection(db!, 'fmb'), where('id', '==', id))); return s.empty ? null : s.docs[0].data(); },
+              async (item) => { await setDoc(doc(db!, 'recycle_bin', id), item); },
+              async (id) => { await deleteDoc(doc(db!, 'fmb', id)); }
           ),
           async () => doSoftDelete(
               async () => dbOp(STORES.FMB, 'readonly', s => s.get(id)),
@@ -523,9 +513,9 @@ export const DataService = {
 
       return execute(
           async () => doSoftDelete(
-              async () => { const s = await getDocs(query(collection(db, 'kml'), where('id', '==', id))); return s.empty ? null : s.docs[0].data(); },
-              async (item) => { await setDoc(doc(db, 'recycle_bin', id), item); },
-              async (id) => { await deleteDoc(doc(db, 'kml', id)); }
+              async () => { const s = await getDocs(query(collection(db!, 'kml'), where('id', '==', id))); return s.empty ? null : s.docs[0].data(); },
+              async (item) => { await setDoc(doc(db!, 'recycle_bin', id), item); },
+              async (id) => { await deleteDoc(doc(db!, 'kml', id)); }
           ),
           async () => doSoftDelete(
               async () => dbOp(STORES.KML, 'readonly', s => s.get(id)),
@@ -544,13 +534,12 @@ export const DataService = {
           if (sourceModule === 'KML') target = 'kml';
           if (sourceModule && sourceModule.endsWith('_FILE')) target = 'files';
           
-          // Map to store names for local
           let localTarget = STORES.RECORDS;
           if (sourceModule === 'FMB') localTarget = STORES.FMB;
           if (sourceModule === 'KML') localTarget = STORES.KML;
           if (sourceModule?.endsWith('_FILE')) localTarget = STORES.FILES;
 
-          if (isOfflineMode) {
+          if (!db) {
               await dbOp(localTarget, 'readwrite', s => s.put(dataToRestore));
           } else {
               await saver(target, dataToRestore);
@@ -561,13 +550,13 @@ export const DataService = {
 
       return execute(
           async () => {
-              const snap = await getDocs(query(collection(db, 'recycle_bin'), where('id', '==', id)));
+              const snap = await getDocs(query(collection(db!, 'recycle_bin'), where('id', '==', id)));
               if (snap.empty) return false;
               const record = snap.docs[0].data() as RecycleBinRecord;
               return handleRestore(
                   record,
-                  async (col, item) => { await setDoc(doc(db, col, id), item); },
-                  async (id) => { await deleteDoc(doc(db, 'recycle_bin', id)); }
+                  async (col, item) => { await setDoc(doc(db!, col, id), item); },
+                  async (id) => { await deleteDoc(doc(db!, 'recycle_bin', id)); }
               );
           },
           async () => {
@@ -575,7 +564,7 @@ export const DataService = {
               if (!record) return false;
               return handleRestore(
                   record,
-                  async () => {}, // Handled inside logic
+                  async () => {}, 
                   async (id) => { await dbOp(STORES.RECYCLE_BIN, 'readwrite', s => s.delete(id)); }
               );
           }
@@ -584,7 +573,7 @@ export const DataService = {
 
   permanentDeleteRecycleBinRecord: async (id: string): Promise<boolean> => {
       return execute(
-          async () => { await deleteDoc(doc(db, 'recycle_bin', id)); return true; },
+          async () => { await deleteDoc(doc(db!, 'recycle_bin', id)); return true; },
           async () => { await dbOp(STORES.RECYCLE_BIN, 'readwrite', s => s.delete(id)); return true; }
       );
   },
@@ -592,7 +581,7 @@ export const DataService = {
   // --- FMB & KML ---
   getFMB: async (): Promise<FMBRecord[]> => {
       return execute(
-          async () => { const s = await getDocs(collection(db, 'fmb')); return s.docs.map(d => d.data() as FMBRecord); },
+          async () => { const s = await getDocs(collection(db!, 'fmb')); return s.docs.map(d => d.data() as FMBRecord); },
           async () => { return dbGetAll<FMBRecord>(STORES.FMB); }
       );
   },
@@ -602,7 +591,7 @@ export const DataService = {
               if (record.sketchUrl && record.sketchUrl.startsWith('data:')) {
                   record.sketchUrl = await uploadBase64ToStorage(record.sketchUrl, `fmb/${record.id}`);
               }
-              await setDoc(doc(db, 'fmb', record.id), record);
+              await setDoc(doc(db!, 'fmb', record.id), record);
           },
           async () => { await dbOp(STORES.FMB, 'readwrite', s => s.put(record)); }
       );
@@ -612,12 +601,12 @@ export const DataService = {
           async () => {
               const chunks = chunkArray(newRecords, 100);
               for (const chunk of chunks) {
-                  const batch = writeBatch(db);
+                  const batch = writeBatch(db!);
                   await Promise.all(chunk.map(async (r) => {
                       if (r.sketchUrl && r.sketchUrl.startsWith('data:')) {
                           r.sketchUrl = await uploadBase64ToStorage(r.sketchUrl, `fmb/${r.id}`);
                       }
-                      batch.set(doc(db, 'fmb', r.id), r);
+                      batch.set(doc(db!, 'fmb', r.id), r);
                   }));
                   await batch.commit();
               }
@@ -634,7 +623,7 @@ export const DataService = {
 
   getKML: async (): Promise<KMLRecord[]> => {
       return execute(
-          async () => { const s = await getDocs(collection(db, 'kml')); return s.docs.map(d => d.data() as KMLRecord); },
+          async () => { const s = await getDocs(collection(db!, 'kml')); return s.docs.map(d => d.data() as KMLRecord); },
           async () => { return dbGetAll<KMLRecord>(STORES.KML); }
       );
   },
@@ -644,7 +633,7 @@ export const DataService = {
               if (record.url && record.url.startsWith('data:')) {
                   record.url = await uploadBase64ToStorage(record.url, `kml/${record.id}`);
               }
-              await setDoc(doc(db, 'kml', record.id), record);
+              await setDoc(doc(db!, 'kml', record.id), record);
           },
           async () => { await dbOp(STORES.KML, 'readwrite', s => s.put(record)); }
       );
@@ -657,7 +646,7 @@ export const DataService = {
               if (record.selfieUrl.startsWith('data:')) {
                   record.selfieUrl = await uploadBase64ToStorage(record.selfieUrl, `attendance/${record.id}_selfie.jpg`);
               }
-              await setDoc(doc(db, 'attendance', record.id), record);
+              await setDoc(doc(db!, 'attendance', record.id), record);
               return true;
           },
           async () => {
@@ -671,7 +660,7 @@ export const DataService = {
       const today = new Date().toISOString().split('T')[0];
       return execute(
           async () => {
-              const q = query(collection(db, 'attendance'), where('userId', '==', userId), where('date', '==', today));
+              const q = query(collection(db!, 'attendance'), where('userId', '==', userId), where('date', '==', today));
               const snap = await getDocs(q);
               return !snap.empty;
           },
@@ -693,7 +682,7 @@ export const DataService = {
   
   getAllAttendance: async (): Promise<AttendanceRecord[]> => {
       return execute(
-          async () => { const s = await getDocs(collection(db, 'attendance')); return s.docs.map(d => d.data() as AttendanceRecord); },
+          async () => { const s = await getDocs(collection(db!, 'attendance')); return s.docs.map(d => d.data() as AttendanceRecord); },
           async () => { return dbGetAll<AttendanceRecord>(STORES.ATTENDANCE); }
       );
   },
@@ -721,7 +710,6 @@ export const DataService = {
 
   // --- AUTH ---
   getAllUsers: () => {
-      // Sync return for UI compatibility (reads from localStorage cache)
       const usersStr = localStorage.getItem('rythu_samachar_users');
       return usersStr ? JSON.parse(usersStr) : [];
   },
@@ -729,9 +717,8 @@ export const DataService = {
   fetchUsers: async (): Promise<User[]> => {
       return execute(
           async () => {
-              const snap = await getDocs(collection(db, 'users'));
+              const snap = await getDocs(collection(db!, 'users'));
               const users = snap.docs.map(d => d.data() as User);
-              // Update local cache
               localStorage.setItem('rythu_samachar_users', JSON.stringify(users));
               return users;
           },
@@ -752,7 +739,7 @@ export const DataService = {
 
       return execute(
           async () => {
-              const q = query(collection(db, 'users'), where('email', '==', email), where('password', '==', password));
+              const q = query(collection(db!, 'users'), where('email', '==', email), where('password', '==', password));
               const snap = await getDocs(q);
               if (!snap.empty) {
                   const user = snap.docs[0].data() as User;
@@ -767,7 +754,7 @@ export const DataService = {
   
   updateUserLoginTime: async (userId: string) => {
       execute(
-          async () => { await updateDoc(doc(db, 'users', userId), { lastLogin: new Date().toISOString() }); },
+          async () => { await updateDoc(doc(db!, 'users', userId), { lastLogin: new Date().toISOString() }); },
           async () => {
               const users = DataService.getAllUsers();
               const u = users.find(u => u.id === userId);
@@ -781,7 +768,7 @@ export const DataService = {
       if(!validate.isValid) return { success: false, message: validate.message || "Invalid Password" };
 
       return execute(
-          async () => { await updateDoc(doc(db, 'users', userId), { password: newPassword }); return { success: true, message: "Password updated." }; },
+          async () => { await updateDoc(doc(db!, 'users', userId), { password: newPassword }); return { success: true, message: "Password updated." }; },
           async () => {
               const users = DataService.getAllUsers();
               const idx = users.findIndex(u => u.id === userId);
@@ -816,7 +803,7 @@ export const DataService = {
       };
       
       return execute(
-          async () => { await setDoc(doc(db, 'users', newUser.id), newUser); return { success: true, message: "Staff added" }; },
+          async () => { await setDoc(doc(db!, 'users', newUser.id), newUser); return { success: true, message: "Staff added" }; },
           async () => { 
               const users = DataService.getAllUsers(); 
               users.push(newUser); 
@@ -828,7 +815,7 @@ export const DataService = {
 
   updateUserProfile: async (user: User): Promise<{ success: boolean, message: string }> => {
       return execute(
-          async () => { await updateDoc(doc(db, 'users', user.id), { ...user, is_updated: 1 }); return { success: true, message: "Profile updated" }; },
+          async () => { await updateDoc(doc(db!, 'users', user.id), { ...user, is_updated: 1 }); return { success: true, message: "Profile updated" }; },
           async () => {
               const users = DataService.getAllUsers();
               const idx = users.findIndex(u => u.id === user.id);
@@ -840,7 +827,7 @@ export const DataService = {
 
   updateUserStatus: async (id: string, status: 'Active' | 'Inactive'): Promise<boolean> => {
       return execute(
-          async () => { await updateDoc(doc(db, 'users', id), { status }); return true; },
+          async () => { await updateDoc(doc(db!, 'users', id), { status }); return true; },
           async () => {
               const users = DataService.getAllUsers();
               const u = users.find(u => u.id === id);
@@ -852,7 +839,7 @@ export const DataService = {
 
   deleteUser: async (id: string) => {
       return execute(
-          async () => { await deleteDoc(doc(db, 'users', id)); },
+          async () => { await deleteDoc(doc(db!, 'users', id)); },
           async () => {
               const users = DataService.getAllUsers().filter(u => u.id !== id);
               localStorage.setItem('rythu_samachar_users', JSON.stringify(users));
@@ -861,7 +848,6 @@ export const DataService = {
   },
   
   sendOtp: async (email: string): Promise<{ success: boolean, otp?: string, message?: string }> => {
-      // Mock OTP logic works same for both
       const users = await DataService.fetchUsers();
       const user = users.find(u => u.email === email);
       if (!user) return { success: false, message: "Email not registered." };
@@ -884,7 +870,7 @@ export const DataService = {
       if (!user) return { success: false, message: 'User not found' };
       
       return execute(
-          async () => { await updateDoc(doc(db, 'users', user.id), { password: pass }); return { success: true, message: "Password Reset" }; },
+          async () => { await updateDoc(doc(db!, 'users', user.id), { password: pass }); return { success: true, message: "Password Reset" }; },
           async () => {
               const localUsers = DataService.getAllUsers();
               const idx = localUsers.findIndex(u => u.id === user.id);
@@ -897,6 +883,7 @@ export const DataService = {
 
 export const AuthService = {
     ...DataService,
+    // ALIAS for backward compatibility in components, but forces Cloud Fetch
     getAllUsers: () => DataService.getAllUsers()
 };
 

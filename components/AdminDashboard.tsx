@@ -1,14 +1,14 @@
-
 import React, { useState, useEffect } from 'react';
-import { AuthService } from '../services/mockDataService';
+import { AuthService, DataService } from '../services/mockDataService';
 import { User, UserRole } from '../types';
-import { UserPlus, Trash2, Shield, Mail, Phone, Search, Users, ToggleLeft, ToggleRight, Eye, Calendar, Clock, Lock, CheckCircle, XCircle, X, FileSpreadsheet, FileText, RotateCcw } from 'lucide-react';
+import { UserPlus, Trash2, Shield, Mail, Phone, Search, Users, ToggleLeft, ToggleRight, Eye, Calendar, Clock, Lock, CheckCircle, XCircle, X, FileSpreadsheet, FileText, RotateCcw, Loader2 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 
 export const AdminDashboard: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
+  const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   
   // Add Staff State
@@ -27,8 +27,18 @@ export const AdminDashboard: React.FC = () => {
     loadUsers();
   }, []);
 
-  const loadUsers = () => {
-    setUsers(AuthService.getAllUsers());
+  const loadUsers = async () => {
+    setLoading(true);
+    try {
+        // Force fetch from Cloud
+        const data = await DataService.fetchUsers();
+        setUsers(data);
+    } catch(e) {
+        console.error(e);
+        setError("Failed to fetch users from Cloud");
+    } finally {
+        setLoading(false);
+    }
   };
 
   const handleAddStaff = async (e: React.FormEvent) => {
@@ -45,7 +55,7 @@ export const AdminDashboard: React.FC = () => {
           setError('');
           setIsAddMode(false);
           setNewName(''); setNewEmail(''); setNewMobile(''); setNewPassword('');
-          loadUsers();
+          await loadUsers(); // Refresh list from Cloud
           setTimeout(() => setSuccess(''), 3000);
       } else {
           setError(result.message);
@@ -55,7 +65,7 @@ export const AdminDashboard: React.FC = () => {
   const handleStatusToggle = async (id: string, currentStatus: 'Active' | 'Inactive') => {
       const newStatus = currentStatus === 'Active' ? 'Inactive' : 'Active';
       if(await AuthService.updateUserStatus(id, newStatus)) {
-          loadUsers();
+          await loadUsers(); // Refresh
           setSuccess(`User ${newStatus === 'Active' ? 'Activated' : 'Deactivated'} Successfully`);
           setTimeout(() => setSuccess(''), 3000);
       } else {
@@ -71,7 +81,7 @@ export const AdminDashboard: React.FC = () => {
       }
       if(window.confirm("Are you sure you want to permanently delete this staff member? This action cannot be undone.")) {
           await AuthService.deleteUser(id);
-          loadUsers();
+          await loadUsers();
           setSuccess("Staff member deleted permanently.");
           setTimeout(() => setSuccess(''), 3000);
       }
@@ -257,7 +267,9 @@ export const AdminDashboard: React.FC = () => {
                       </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                      {filteredUsers.map(user => {
+                      {loading ? (
+                          <tr><td colSpan={5} className="py-12 text-center text-gray-400"><Loader2 size={32} className="animate-spin mx-auto mb-2"/>Loading users from Cloud...</td></tr>
+                      ) : filteredUsers.map(user => {
                           const isHighlighted = user.is_new === 1 || user.is_updated === 1;
                           const rowClass = isHighlighted 
                             ? 'bg-[#d4f8d4] hover:bg-green-100 transition-colors group'
@@ -344,7 +356,7 @@ export const AdminDashboard: React.FC = () => {
                           </tr>
                           )
                       })}
-                      {filteredUsers.length === 0 && (
+                      {!loading && filteredUsers.length === 0 && (
                           <tr>
                               <td colSpan={5} className="text-center py-10 text-gray-400">
                                   No staff members found matching your search.
