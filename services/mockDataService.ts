@@ -180,8 +180,30 @@ export const DataService = {
 
   initialize: async () => {
       // 1. Check if Supabase Configured
-      if (isSupabaseConfigured()) {
+      if (isSupabaseConfigured() && supabase) {
           console.log("✅ Connected to Supabase");
+          
+          // Check for Default Admin in Supabase
+          try {
+              const { data } = await supabase.from('users').select('*').eq('email', 'sanju.pavan11@gmail.com').single();
+              if (!data) {
+                  console.log("Creating Default Admin in Supabase...");
+                  await supabase.from('users').insert([{
+                      id: 'admin_1',
+                      name: 'Sanjeeva Naik',
+                      email: 'sanju.pavan11@gmail.com',
+                      mobile: '9999999999',
+                      role: UserRole.ADMIN,
+                      password: 'Sanju@12',
+                      status: 'Active',
+                      created_at: new Date().toISOString(),
+                      is_new: 0,
+                      is_updated: 0
+                  }]);
+              }
+          } catch(e) {
+              console.error("Error seeding admin in Supabase:", e);
+          }
           return;
       }
 
