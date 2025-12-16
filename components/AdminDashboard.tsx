@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { AuthService } from '../services/mockDataService';
+import { SQL_SCHEMA } from '../services/supabase';
 import { User, UserRole } from '../types';
-import { UserPlus, Trash2, Shield, Mail, Phone, Search, Users, ToggleLeft, ToggleRight, Eye, Calendar, Clock, Lock, CheckCircle, XCircle, X, FileSpreadsheet, FileText, RotateCcw, Database, Save, AlertTriangle } from 'lucide-react';
+import { UserPlus, Trash2, Shield, Mail, Phone, Search, Users, ToggleLeft, ToggleRight, Eye, Calendar, Clock, Lock, CheckCircle, XCircle, X, FileSpreadsheet, FileText, RotateCcw, Database, Save, AlertTriangle, Copy } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -24,34 +25,44 @@ export const AdminDashboard: React.FC = () => {
 
   // DB Config State
   const [showDbConfig, setShowDbConfig] = useState(false);
-  const [dbConfigJson, setDbConfigJson] = useState('');
+  const [dbType, setDbType] = useState<'firebase' | 'supabase'>('supabase');
+  const [configJson, setConfigJson] = useState('');
 
   useEffect(() => {
     loadUsers();
-    // Load existing config if available for display
-    const existing = localStorage.getItem('rythu_firebase_config');
-    if(existing) setDbConfigJson(existing);
-  }, []);
+    loadConfig();
+  }, [dbType]);
 
   const loadUsers = () => {
     setUsers(AuthService.getAllUsers());
   };
 
+  const loadConfig = () => {
+      const key = dbType === 'firebase' ? 'rythu_firebase_config' : 'rythu_supabase_config';
+      const existing = localStorage.getItem(key);
+      setConfigJson(existing || (dbType === 'supabase' ? '{"url": "", "key": ""}' : ''));
+  };
+
   const handleSaveConfig = () => {
       try {
-          // Validate JSON
-          const parsed = JSON.parse(dbConfigJson);
-          if(!parsed.apiKey || !parsed.projectId) {
-              setError("Invalid Config: Missing apiKey or projectId");
+          const parsed = JSON.parse(configJson);
+          if (dbType === 'supabase' && (!parsed.url || !parsed.key)) {
+              setError("Supabase config must have 'url' and 'key'");
               return;
           }
-          localStorage.setItem('rythu_firebase_config', JSON.stringify(parsed));
-          setSuccess("Database Configuration Saved. Please reload the page.");
-          setShowDbConfig(false);
+          const key = dbType === 'firebase' ? 'rythu_firebase_config' : 'rythu_supabase_config';
+          localStorage.setItem(key, JSON.stringify(parsed));
+          setSuccess(`${dbType === 'firebase' ? 'Firebase' : 'Supabase'} Configuration Saved. Reloading...`);
           setTimeout(() => window.location.reload(), 1500);
       } catch(e) {
           setError("Invalid JSON Format.");
       }
+  };
+
+  const copySchema = () => {
+      navigator.clipboard.writeText(SQL_SCHEMA);
+      setSuccess("SQL Schema Copied to Clipboard!");
+      setTimeout(() => setSuccess(''), 2000);
   };
 
   const handleAddStaff = async (e: React.FormEvent) => {
@@ -193,25 +204,59 @@ export const AdminDashboard: React.FC = () => {
       {/* 3. DATABASE CONFIG MODAL */}
       {showDbConfig && (
           <div className="fixed inset-0 z-[100] bg-black/60 flex items-center justify-center p-4 backdrop-blur-sm animate-in fade-in">
-              <div className="bg-white w-full max-w-lg rounded-xl shadow-2xl p-6 relative">
-                  <button onClick={() => setShowDbConfig(false)} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600"><X size={20}/></button>
-                  <h3 className="text-xl font-bold text-gray-800 mb-2 flex items-center"><Database className="mr-2 text-purple-600"/> Connect Database</h3>
-                  <p className="text-sm text-gray-500 mb-4">Paste your Firebase Configuration JSON object here. This allows the application to connect to your real database instance.</p>
+              <div className="bg-white w-full max-w-2xl rounded-xl shadow-2xl p-6 relative flex flex-col h-[90vh]">
+                  <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-xl font-bold text-gray-800 flex items-center"><Database className="mr-2 text-purple-600"/> Connect Database</h3>
+                      <button onClick={() => setShowDbConfig(false)} className="text-gray-400 hover:text-gray-600"><X size={20}/></button>
+                  </div>
                   
-                  <div className="bg-gray-50 p-3 rounded-lg border border-gray-200 mb-4 text-xs font-mono text-gray-600">
-                      {`{ "apiKey": "...", "authDomain": "...", "projectId": "...", ... }`}
+                  <div className="flex border-b border-gray-200 mb-4">
+                      <button onClick={() => setDbType('supabase')} className={`flex-1 py-2 font-bold ${dbType === 'supabase' ? 'text-green-600 border-b-2 border-green-600' : 'text-gray-500'}`}>Supabase (SQL)</button>
+                      <button onClick={() => setDbType('firebase')} className={`flex-1 py-2 font-bold ${dbType === 'firebase' ? 'text-orange-600 border-b-2 border-orange-600' : 'text-gray-500'}`}>Firebase (NoSQL)</button>
                   </div>
 
-                  <textarea 
-                      className="w-full h-40 p-3 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-purple-500 outline-none"
-                      placeholder="Paste JSON config here..."
-                      value={dbConfigJson}
-                      onChange={e => setDbConfigJson(e.target.value)}
-                  />
+                  <div className="flex-1 overflow-y-auto pr-2">
+                      <p className="text-sm text-gray-500 mb-2">Paste your JSON configuration object below.</p>
+                      
+                      {dbType === 'supabase' ? (
+                          <>
+                              <div className="bg-green-50 p-3 rounded-lg border border-green-100 mb-3 text-xs font-mono text-green-800">
+                                  {`{ "url": "https://xyz.supabase.co", "key": "public-anon-key" }`}
+                              </div>
+                              <textarea 
+                                  className="w-full h-24 p-3 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-green-500 outline-none mb-4"
+                                  value={configJson}
+                                  onChange={e => setConfigJson(e.target.value)}
+                              />
+                              
+                              <div className="bg-gray-900 text-white rounded-lg p-4 relative">
+                                  <div className="flex justify-between items-center mb-2">
+                                      <span className="text-xs font-bold uppercase tracking-wider text-gray-400">Database Schema (SQL)</span>
+                                      <button onClick={copySchema} className="text-xs flex items-center hover:text-green-400"><Copy size={12} className="mr-1"/> Copy</button>
+                                  </div>
+                                  <pre className="text-[10px] overflow-auto max-h-40 font-mono text-gray-300 scrollbar-thin">
+                                      {SQL_SCHEMA}
+                                  </pre>
+                              </div>
+                              <p className="text-xs text-gray-500 mt-2">Run this SQL in your Supabase SQL Editor to create the tables.</p>
+                          </>
+                      ) : (
+                          <>
+                              <div className="bg-orange-50 p-3 rounded-lg border border-orange-100 mb-3 text-xs font-mono text-orange-800">
+                                  {`{ "apiKey": "...", "authDomain": "...", "projectId": "...", ... }`}
+                              </div>
+                              <textarea 
+                                  className="w-full h-40 p-3 border border-gray-300 rounded-lg text-sm font-mono focus:ring-2 focus:ring-orange-500 outline-none"
+                                  value={configJson}
+                                  onChange={e => setConfigJson(e.target.value)}
+                              />
+                          </>
+                      )}
+                  </div>
                   
-                  <div className="flex justify-end gap-3 mt-4">
+                  <div className="flex justify-end gap-3 mt-4 pt-4 border-t border-gray-100">
                       <button onClick={() => setShowDbConfig(false)} className="px-4 py-2 text-gray-600 hover:bg-gray-100 rounded-lg font-medium">Cancel</button>
-                      <button onClick={handleSaveConfig} className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-bold shadow-md flex items-center">
+                      <button onClick={handleSaveConfig} className={`px-6 py-2 text-white rounded-lg font-bold shadow-md flex items-center ${dbType === 'supabase' ? 'bg-green-600 hover:bg-green-700' : 'bg-orange-600 hover:bg-orange-700'}`}>
                           <Save size={18} className="mr-2"/> Save & Connect
                       </button>
                   </div>
@@ -219,7 +264,7 @@ export const AdminDashboard: React.FC = () => {
           </div>
       )}
 
-      {/* 4. ADD STAFF FORM */}
+      {/* 4. ADD STAFF FORM (Existing code...) */}
       {isAddMode && (
           <div className="bg-white p-6 rounded-xl shadow-lg border-t-4 border-agri-500 animate-in fade-in slide-in-from-top-4">
               <h3 className="font-bold text-gray-800 mb-6 flex items-center text-lg">
@@ -255,7 +300,7 @@ export const AdminDashboard: React.FC = () => {
           </div>
       )}
 
-      {/* 5. STAFF ACTIVATION TABLE */}
+      {/* 5. STAFF ACTIVATION TABLE (Existing code...) */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden flex flex-col">
           <div className="p-5 border-b bg-gray-50 flex flex-col lg:flex-row justify-between items-center gap-4">
               <h3 className="font-bold text-gray-800 flex items-center text-lg">
