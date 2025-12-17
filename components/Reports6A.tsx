@@ -93,9 +93,13 @@ export const Reports6A: React.FC = () => {
   const loadDashboardData = async (silent = false) => {
     if(!silent) setLoading(true);
     
-    // 1. Fetch Staff Users (Exclude Admin if you only want 'Teams')
+    // 1. Fetch Latest Users (Ensure fresh data)
+    await AuthService.fetchUsers();
     const allUsers = AuthService.getAllUsers();
-    const staffUsers = allUsers.filter(u => u.role !== UserRole.ADMIN);
+    
+    // SHOW ONLY TEAMS (Staff Only)
+    // Filter out Admins to ensure the "Teams" grid only reflects field staff
+    const activeUsers = allUsers.filter(u => u.status === 'Active' && u.role !== UserRole.ADMIN);
     
     // 2. Fetch Data from All Monitored Modules
     const modulesToCheck = ['DATA_6A', 'RYTHU_DETAILS', 'AREGISTER', 'ADANGAL'];
@@ -117,17 +121,19 @@ export const Reports6A: React.FC = () => {
     // 3. Aggregate Stats per User
     const teamStats: TeamStats[] = [];
     
-    // We need 8 slots fixed (Increased from 6)
-    for (let i = 0; i < 8; i++) {
-        const user = staffUsers[i]; // Get user at index
-        const teamLabel = `Team ${i + 1}`;
+    // We want to show at least 8 slots, filled by active users first
+    const maxSlots = Math.max(8, activeUsers.length);
+
+    for (let i = 0; i < maxSlots; i++) {
+        const user = activeUsers[i]; // Get user at index
+        const teamLabel = `Team ${i + 1}`; // Simple Team Label
         
         if (!user) {
             // Placeholder for empty team slot
             teamStats.push({
                 userId: `placeholder_${i}`,
                 userName: 'Unassigned',
-                teamLabel,
+                teamLabel: `Slot ${i + 1}`,
                 totalEntries: 0,
                 newRows: 0,
                 updatedRows: 0,
@@ -361,7 +367,7 @@ export const Reports6A: React.FC = () => {
                <div className="flex items-center gap-4">
                    <h2 className="text-2xl font-bold text-gray-800 flex items-center">
                        <LayoutDashboard className="mr-3 text-blue-600" size={28} />
-                       8-Teams Work Monitor
+                       Team Work Monitor
                    </h2>
                    {!loading && activeTab === 'activity' && (
                         <div className="bg-indigo-50 text-indigo-700 px-4 py-1.5 rounded-full text-sm font-bold border border-indigo-100 flex items-center shadow-sm animate-in fade-in zoom-in">

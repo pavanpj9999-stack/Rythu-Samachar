@@ -79,15 +79,42 @@ CREATE TABLE IF NOT EXISTS attendance (
   map_url TEXT
 );
 
--- 5. Enable Row Level Security (Optional but recommended)
+-- 5. FMB Table
+CREATE TABLE IF NOT EXISTS fmb (
+  id TEXT PRIMARY KEY,
+  survey_no TEXT,
+  village TEXT,
+  sketch_url TEXT,
+  last_updated TEXT,
+  file_type TEXT
+);
+
+-- 6. KML Table
+CREATE TABLE IF NOT EXISTS kml (
+  id TEXT PRIMARY KEY,
+  file_name TEXT,
+  uploaded_by TEXT,
+  upload_date TEXT,
+  size TEXT,
+  url TEXT,
+  google_earth_link TEXT,
+  latitude FLOAT,
+  longitude FLOAT
+);
+
+-- 7. Enable Row Level Security (Optional but recommended)
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE files ENABLE ROW LEVEL SECURITY;
 ALTER TABLE records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE attendance ENABLE ROW LEVEL SECURITY;
+ALTER TABLE fmb ENABLE ROW LEVEL SECURITY;
+ALTER TABLE kml ENABLE ROW LEVEL SECURITY;
 
--- 6. Policies (Public Access for simplicity in this demo, restrict in production)
+-- 8. Policies (Public Access for simplicity in this demo, restrict in production)
 CREATE POLICY "Public Access" ON users FOR ALL USING (true);
 CREATE POLICY "Public Access" ON files FOR ALL USING (true);
 CREATE POLICY "Public Access" ON records FOR ALL USING (true);
 CREATE POLICY "Public Access" ON attendance FOR ALL USING (true);
+CREATE POLICY "Public Access" ON fmb FOR ALL USING (true);
+CREATE POLICY "Public Access" ON kml FOR ALL USING (true);
 `;

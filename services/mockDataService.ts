@@ -1,3 +1,4 @@
+
 import { User, UserRole, DashboardStats, FMBRecord, KMLRecord, ARegisterFile, RecycleBinRecord, DynamicRecord, ModuleType, ARegisterSummary, AttendanceRecord } from '../types';
 import { db, storage } from './firebase';
 import { supabase, isSupabaseConfigured } from './supabase';
@@ -279,7 +280,7 @@ export const DataService = {
   subscribeToModuleRecords: (module: ModuleType, fileId: string | undefined, callback: (data: DynamicRecord[]) => void) => {
       // Supabase Subscription
       if (isSupabaseConfigured() && supabase) {
-          let query = supabase.from('records').select('*').eq('module', module);
+          let query = supabase.from('records').select('*').eq('module', module).limit(10000); // Increased Limit
           if (fileId) query = query.eq('file_id', fileId);
           
           // Initial Fetch
@@ -293,7 +294,6 @@ export const DataService = {
           // Realtime Listener
           const channel = supabase.channel('realtime_records')
               .on('postgres_changes', { event: '*', schema: 'public', table: 'records', filter: `module=eq.${module}` }, async (payload) => {
-                  // Simply re-fetch for simplicity in this demo (optimally would merge payload)
                   const { data } = await query;
                   if (data) {
                       const records = data.map((r: any) => ({ ...r.data, id: r.id, fileId: r.file_id, imageUrl: r.image_url, ...r }));
@@ -306,12 +306,17 @@ export const DataService = {
       }
 
       if (db) {
-          // Firebase Listener
           let q = fileId ? query(collection(db, 'records'), where('fileId', '==', fileId)) : query(collection(db, 'records'));
           const unsubscribe = onSnapshot(q, (snapshot) => {
               let records = snapshot.docs.map(d => d.data() as DynamicRecord);
               if (module === 'AREGISTER') {
                   records = records.map(r => ({ ...r, 'Total Extent': calculateARegisterTotal(r) }));
+              }
+              // If querying all module records without fileId in Firebase, we must filter client side for correct module if the index is weak
+              if (!fileId) {
+                  // Fallback: If 'module' field exists in docs, use it. If not, rely on file linkage (slower).
+                  // Best effort: Assume 'records' collection is shared and filter by module field if present
+                  records = records.filter(r => r.module === module || (r as any)._sourceModule === module);
               }
               callback(records);
           }, (error) => {
@@ -319,7 +324,6 @@ export const DataService = {
           });
           return unsubscribe;
       } else {
-          // Polling Fallback
           const interval = setInterval(async () => {
               const data = await DataService.getModuleRecords(module, fileId);
               callback(data);
@@ -467,7 +471,7 @@ export const DataService = {
 
       return execute(
           async () => { // Supabase
-              let query = supabase!.from('records').select('*').eq('module', module);
+              let query = supabase!.from('records').select('*').eq('module', module).limit(10000); // High limit for reports
               if (fileId) query = query.eq('file_id', fileId);
               const { data, error } = await query;
               if (error) throw error;
@@ -485,13 +489,35 @@ export const DataService = {
               return processRecords(records);
           },
           async () => { // Firebase
-              let q = fileId ? query(collection(db, 'records'), where('fileId', '==', fileId)) : query(collection(db, 'records')); 
-              const snapshot = await getDocs(q);
-              let records = snapshot.docs.map(d => d.data() as DynamicRecord);
-              if (!fileId) {
-                  const files = await DataService.getModuleFiles(module);
-                  const fileIds = files.map(f => f.id);
-                  records = records.filter(r => fileIds.includes(r.fileId || ''));
+              let records: DynamicRecord[] = [];
+              if (fileId) {
+                  const q = query(collection(db, 'records'), where('fileId', '==', fileId));
+                  const snapshot = await getDocs(q);
+                  records = snapshot.docs.map(d => d.data() as DynamicRecord);
+              } else {
+                  // Attempt to fetch by module field first (if indexed and saved)
+                  // Fallback to fetch-all if module field missing in old data, but usually better to scan
+                  const q = query(collection(db, 'records'), where('module', '==', module));
+                  try {
+                      const snapshot = await getDocs(q);
+                      if (!snapshot.empty) {
+                          records = snapshot.docs.map(d => d.data() as DynamicRecord);
+                      } else {
+                          // Fallback: Fetch all and filter (Slow but safe for legacy data)
+                          const allSnap = await getDocs(collection(db, 'records'));
+                          const allRecs = allSnap.docs.map(d => d.data() as DynamicRecord);
+                          const files = await DataService.getModuleFiles(module);
+                          const fileIds = files.map(f => f.id);
+                          records = allRecs.filter(r => fileIds.includes(r.fileId || '') || r.module === module);
+                      }
+                  } catch (e) {
+                      // Index missing?
+                      const allSnap = await getDocs(collection(db, 'records'));
+                      const allRecs = allSnap.docs.map(d => d.data() as DynamicRecord);
+                      const files = await DataService.getModuleFiles(module);
+                      const fileIds = files.map(f => f.id);
+                      records = allRecs.filter(r => fileIds.includes(r.fileId || '') || r.module === module);
+                  }
               }
               return processRecords(records);
           },
@@ -508,7 +534,7 @@ export const DataService = {
                   const files = await DataService.getModuleFiles(module);
                   const fileIds = new Set(files.map(f => f.id));
                   const all = await dbGetAll<DynamicRecord>(STORES.RECORDS);
-                  resultRecords = all.filter(r => r.fileId && fileIds.has(r.fileId));
+                  resultRecords = all.filter(r => (r.fileId && fileIds.has(r.fileId)) || r.module === module);
               }
               return processRecords(resultRecords);
           },
@@ -553,7 +579,9 @@ export const DataService = {
                           record.imageUrl = await uploadBase64ToStorage(record.imageUrl, `records/${module}/${record.id}_img`);
                       }
                       const ref = doc(db, 'records', record.id);
-                      batch.set(ref, record, { merge: true });
+                      // Explicitly save module to root for easier querying
+                      const recordWithModule = { ...record, module };
+                      batch.set(ref, recordWithModule, { merge: true });
                   }));
                   await batch.commit();
               }
@@ -562,7 +590,7 @@ export const DataService = {
               const db = await openDB();
               const tx = db.transaction(STORES.RECORDS, 'readwrite');
               const store = tx.objectStore(STORES.RECORDS);
-              newRecords.forEach(r => store.put(r));
+              newRecords.forEach(r => store.put({ ...r, module }));
               return new Promise<void>((resolve, reject) => { tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); });
           }
       );
@@ -597,18 +625,17 @@ export const DataService = {
   },
 
   // --- RECYCLE BIN, FMB, KML, ATTENDANCE, AUTH ---
-  // (Assuming similar implementation pattern for other methods, falling back to Local/Firebase if Supabase table not defined or logic too complex for this snippet)
-  // For brevity, the rest of the methods follow the same pattern: Wrap logic in `execute(supabaseFn, firebaseFn, localFn)`
-  // Implemented critical paths above.
   
-  // Example for Users (Auth)
+  // USERS
   fetchUsers: async (): Promise<User[]> => {
       return execute(
           async () => {
               const { data } = await supabase!.from('users').select('*');
-              return data ? data.map((u: any) => ({
-                  id: u.id, name: u.name, email: u.email, mobile: u.mobile, role: u.role, password: u.password, status: u.status, createdDate: u.created_at, lastLogin: u.last_login
+              const mappedUsers = data ? data.map((u: any) => ({
+                  id: u.id, name: u.name, email: u.email, mobile: u.mobile, role: u.role, password: u.password, status: u.status, createdDate: u.created_at, lastLogin: u.last_login, is_new: u.is_new, is_updated: u.is_updated
               })) : [];
+              localStorage.setItem('rythu_samachar_users', JSON.stringify(mappedUsers));
+              return mappedUsers;
           },
           async () => {
               const snap = await getDocs(collection(db, 'users'));
@@ -625,52 +652,278 @@ export const DataService = {
       );
   },
   
-  // Stub for other methods to ensure compilation (In a real app, apply 'execute' pattern to all)
   getAllUsers: () => {
       const usersStr = localStorage.getItem('rythu_samachar_users');
       return usersStr ? JSON.parse(usersStr) : [];
   },
-  login: async (email: string, password: string) => {
-      // Supabase Auth could be used here, but keeping it simple with table query
+
+  addStaff: async (user: Partial<User>): Promise<{ success: boolean, message: string }> => {
+      if(!user.password) return { success: false, message: "Password required" };
+      const validation = validatePassword(user.password);
+      if(!validation.isValid) return { success: false, message: validation.message || 'Invalid Password' };
+
+      const checkEmail = async () => {
+          const users = await DataService.fetchUsers();
+          return users.some(u => u.email === user.email);
+      };
+
+      if(await checkEmail()) return { success: false, message: "Email already exists" };
+
+      const newUser: User = {
+          id: 'staff_' + Date.now(),
+          name: user.name || 'Staff',
+          email: user.email || '',
+          mobile: user.mobile || '',
+          role: UserRole.USER,
+          password: user.password,
+          createdDate: new Date().toISOString(),
+          status: 'Active',
+          is_new: 1,
+          is_updated: 0
+      };
+      
       return execute(
-          async () => {
-              const { data } = await supabase!.from('users').select('*').eq('email', email).eq('password', password).single();
-              if (data) {
-                  if (data.status === 'Inactive') return { success: false, message: "Account Deactivated." };
-                  return { success: true, user: { ...data, createdDate: data.created_at } };
-              }
-              return { success: false, message: "Invalid Email or Password" };
+          async () => { // Supabase
+              const { error } = await supabase!.from('users').insert([{
+                  id: newUser.id,
+                  name: newUser.name,
+                  email: newUser.email,
+                  mobile: newUser.mobile,
+                  role: newUser.role,
+                  password: newUser.password,
+                  status: newUser.status,
+                  created_at: newUser.createdDate,
+                  is_new: 1
+              }]);
+              if (error) throw error;
+              return { success: true, message: "Staff added to Supabase" };
           },
-          async () => {
-              const q = query(collection(db, 'users'), where('email', '==', email), where('password', '==', password));
-              const snap = await getDocs(q);
-              if (!snap.empty) {
-                  const user = snap.docs[0].data() as User;
-                  if (user.status === 'Inactive') return { success: false, message: "Account Deactivated." };
-                  return { success: true, user };
-              }
-              return { success: false, message: "Invalid Email or Password" };
+          async () => { // Firebase
+              await setDoc(doc(db, 'users', newUser.id), newUser);
+              return { success: true, message: "Staff added to Firebase" };
           },
-          async () => {
-              const users = DataService.getAllUsers();
-              const user = users.find(u => u.email === email && u.password === password);
-              if (user) {
-                  if (user.status === 'Inactive') return { success: false, message: "Account Deactivated." };
-                  return { success: true, user };
-              }
-              return { success: false, message: "Invalid Email or Password" };
+          async () => { // Local
+              const users = DataService.getAllUsers(); 
+              users.push(newUser); 
+              localStorage.setItem('rythu_samachar_users', JSON.stringify(users)); 
+              return { success: true, message: "Staff added Locally" }; 
           }
       );
   },
-  // ... other methods (FMB, KML, RecycleBin) would be updated similarly
-  getFMB: async () => execute(async()=>{ return [] }, async()=>{ const s = await getDocs(collection(db, 'fmb')); return s.docs.map(d=>d.data() as FMBRecord)}, async()=>{ return dbGetAll<FMBRecord>(STORES.FMB) }),
-  saveFMB: async (r: FMBRecord) => execute(async()=>{}, async()=>{ await setDoc(doc(db,'fmb',r.id), r)}, async()=>{ await dbOp(STORES.FMB, 'readwrite', s=>s.put(r)) }),
-  getKML: async () => execute(async()=>{ return [] }, async()=>{ const s = await getDocs(collection(db, 'kml')); return s.docs.map(d=>d.data() as KMLRecord)}, async()=>{ return dbGetAll<KMLRecord>(STORES.KML) }),
-  saveKML: async (r: KMLRecord) => execute(async()=>{}, async()=>{ await setDoc(doc(db,'kml',r.id), r)}, async()=>{ await dbOp(STORES.KML, 'readwrite', s=>s.put(r)) }),
+
+  updateUserStatus: async (id: string, status: 'Active' | 'Inactive'): Promise<boolean> => {
+      return execute(
+          async () => { await supabase!.from('users').update({ status }).eq('id', id); return true; },
+          async () => { await updateDoc(doc(db, 'users', id), { status }); return true; },
+          async () => {
+              const users = DataService.getAllUsers();
+              const u = users.find(u => u.id === id);
+              if(u) { u.status = status; localStorage.setItem('rythu_samachar_users', JSON.stringify(users)); }
+              return true;
+          }
+      );
+  },
+
+  deleteUser: async (id: string) => {
+      return execute(
+          async () => { await supabase!.from('users').delete().eq('id', id); },
+          async () => { await deleteDoc(doc(db, 'users', id)); },
+          async () => {
+              const users = DataService.getAllUsers().filter(u => u.id !== id);
+              localStorage.setItem('rythu_samachar_users', JSON.stringify(users));
+          }
+      );
+  },
+
+  changePassword: async (userId: string, currentPassword: string, newPassword: string): Promise<{ success: boolean, message: string }> => {
+      const validate = validatePassword(newPassword);
+      if(!validate.isValid) return { success: false, message: validate.message || "Invalid Password" };
+
+      return execute(
+          async () => { 
+              await supabase!.from('users').update({ password: newPassword }).eq('id', userId); 
+              return { success: true, message: "Password updated." }; 
+          },
+          async () => { await updateDoc(doc(db, 'users', userId), { password: newPassword }); return { success: true, message: "Password updated." }; },
+          async () => {
+              const users = DataService.getAllUsers();
+              const idx = users.findIndex(u => u.id === userId);
+              if(idx > -1) { users[idx].password = newPassword; localStorage.setItem('rythu_samachar_users', JSON.stringify(users)); return { success: true, message: "Password updated." }; }
+              return { success: false, message: "User not found" };
+          }
+      );
+  },
+
+  login: async (email: string, password: string) => {
+    const users = await DataService.fetchUsers();
+    let user = users.find(u => u.email === email && u.password === password);
+    
+    // --- EMERGENCY ADMIN FAILSAFE ---
+    if (!user && email === 'sanju.pavan11@gmail.com' && password === 'Sanju@12') {
+        console.log("⚠️ Emergency Admin Login Activated");
+        user = {
+            id: 'admin_1',
+            name: 'Sanjeeva Naik',
+            email: 'sanju.pavan11@gmail.com',
+            mobile: '9999999999',
+            role: UserRole.ADMIN,
+            password: 'Sanju@12', 
+            createdDate: new Date().toISOString(),
+            status: 'Active',
+            dob: '1990-01-01'
+        };
+        // Auto-heal DB
+        try {
+            if (isSupabaseConfigured() && supabase) {
+                 await supabase.from('users').upsert({
+                      id: user.id, name: user.name, email: user.email, mobile: user.mobile, role: user.role, password: user.password, status: user.status
+                 });
+            } else if (db) {
+                 await setDoc(doc(db, 'users', user.id), user);
+            } else {
+                const localUsers = DataService.getAllUsers();
+                if(!localUsers.find(u => u.email === email)) {
+                    localUsers.push(user);
+                    localStorage.setItem('rythu_samachar_users', JSON.stringify(localUsers));
+                }
+            }
+        } catch(e) { console.error("Auto-heal failed", e); }
+    }
+
+    if (user) {
+        if (user.status === 'Inactive') return { success: false, message: 'Account is inactive', user: undefined };
+        return { success: true, user };
+    }
+    return { success: false, message: 'Invalid credentials', user: undefined };
+  },
+
+  getFMB: async () => execute(
+      async () => { // Supabase
+          const { data, error } = await supabase!.from('fmb').select('*');
+          if (error) throw error;
+          return data.map((d: any) => ({
+              id: d.id,
+              surveyNo: d.survey_no,
+              village: d.village,
+              sketchUrl: d.sketch_url,
+              lastUpdated: d.last_updated,
+              fileType: d.file_type
+          }));
+      },
+      async () => { // Firebase
+          const s = await getDocs(collection(db, 'fmb'));
+          return s.docs.map(d => d.data() as FMBRecord);
+      },
+      async () => { // Local
+          return dbGetAll<FMBRecord>(STORES.FMB);
+      }
+  ),
+
+  saveFMB: async (r: FMBRecord) => execute(
+      async () => { // Supabase
+          const { error } = await supabase!.from('fmb').upsert({
+              id: r.id,
+              survey_no: r.surveyNo,
+              village: r.village,
+              sketch_url: r.sketchUrl,
+              last_updated: r.lastUpdated,
+              file_type: r.fileType
+          });
+          if (error) throw error;
+      },
+      async () => { // Firebase
+          await setDoc(doc(db, 'fmb', r.id), r);
+      },
+      async () => { // Local
+          await dbOp(STORES.FMB, 'readwrite', s => s.put(r));
+      }
+  ),
+
+  // Implement importFMB properly
+  importFMB: async (records: FMBRecord[]) => execute(
+      async () => { // Supabase
+          const payload = records.map(r => ({
+              id: r.id,
+              survey_no: r.surveyNo,
+              village: r.village,
+              sketch_url: r.sketchUrl,
+              last_updated: r.lastUpdated,
+              file_type: r.fileType
+          }));
+          const chunks = chunkArray(payload, 100);
+          for (const chunk of chunks) {
+              const { error } = await supabase!.from('fmb').upsert(chunk);
+              if (error) throw error;
+          }
+      },
+      async () => { // Firebase
+          const chunks = chunkArray(records, 400);
+          for (const chunk of chunks) {
+              const batch = writeBatch(db);
+              chunk.forEach(r => batch.set(doc(db, 'fmb', r.id), r));
+              await batch.commit();
+          }
+      },
+      async () => { // Local
+          const db = await openDB();
+          const tx = db.transaction(STORES.FMB, 'readwrite');
+          const store = tx.objectStore(STORES.FMB);
+          records.forEach(r => store.put(r));
+          return new Promise<void>((resolve) => { tx.oncomplete = () => resolve(); });
+      }
+  ),
+
+  getKML: async () => execute(
+      async () => { // Supabase
+          const { data, error } = await supabase!.from('kml').select('*');
+          if (error) throw error;
+          return data.map((d: any) => ({
+              id: d.id,
+              fileName: d.file_name,
+              uploadedBy: d.uploaded_by,
+              uploadDate: d.upload_date,
+              size: d.size,
+              url: d.url,
+              googleEarthLink: d.google_earth_link,
+              latitude: d.latitude,
+              longitude: d.longitude
+          }));
+      },
+      async () => { // Firebase
+          const s = await getDocs(collection(db, 'kml'));
+          return s.docs.map(d => d.data() as KMLRecord);
+      },
+      async () => { // Local
+          return dbGetAll<KMLRecord>(STORES.KML);
+      }
+  ),
+
+  saveKML: async (r: KMLRecord) => execute(
+      async () => { // Supabase
+          const { error } = await supabase!.from('kml').upsert({
+              id: r.id,
+              file_name: r.fileName,
+              uploaded_by: r.uploadedBy,
+              upload_date: r.uploadDate,
+              size: r.size,
+              url: r.url,
+              google_earth_link: r.googleEarthLink,
+              latitude: r.latitude,
+              longitude: r.longitude
+          });
+          if (error) throw error;
+      },
+      async () => { // Firebase
+          await setDoc(doc(db, 'kml', r.id), r);
+      },
+      async () => { // Local
+          await dbOp(STORES.KML, 'readwrite', s => s.put(r));
+      }
+  ),
+
   getRecycleBin: async () => execute(async()=>{ return [] }, async()=>{ const s = await getDocs(collection(db, 'recycle_bin')); return s.docs.map(d=>d.data() as RecycleBinRecord)}, async()=>{ return dbGetAll<RecycleBinRecord>(STORES.RECYCLE_BIN) }),
   
   // Partial Implementations for UI functionality (fillers)
-  importFMB: async (r: FMBRecord[]) => {},
   softDeleteFMB: async (id: string, by: string) => true,
   softDeleteKML: async (id: string, by: string) => true,
   softDeleteModuleFile: async (m: ModuleType, id: string, by: string) => true,
@@ -684,14 +937,8 @@ export const DataService = {
   getTodayAttendance: async (uid: string) => false,
   getAllAttendance: async () => [],
   updateUserLoginTime: async (uid: string) => {},
-  changePassword: async (uid: string, o: string, n: string) => ({success:true, message:'Done'}),
-  addStaff: async (u: Partial<User>) => ({success:true, message:'Done'}),
   updateUserProfile: async (u: User) => ({success:true, message:'Done'}),
-  
-  updateUserStatus: async (id: string, s: 'Active' | 'Inactive') => true,
-  deleteUser: async (id: string) => {},
   sendOtp: async (e: string) => ({success:true, otp: '123456', message: 'OTP Sent'}),
-  
   verifyOtp: (e: string, o: string) => true,
   resetPassword: async (e: string, p: string) => ({success:true, message:'Done'}),
   getStats: async () => ({totalEntries:0, totalAcres:0, verifiedCount:0, teamDistribution:[], totalARegister:0, totalFMB:0, comparisonIssues:0})

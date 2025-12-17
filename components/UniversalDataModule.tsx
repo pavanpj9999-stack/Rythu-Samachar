@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { API_BASE } from '../config';
@@ -440,7 +441,10 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
           if (!apiError) {
               axios.post(`${API_BASE}/upload${moduleType.toLowerCase()}`, { records: newRecords, timestamp: new Date().toISOString() })
                   .then(() => showToast("Data synced to cloud successfully"))
-                  .catch(e => console.error("Cloud sync failed", e));
+                  .catch(e => {
+                      console.warn("Cloud sync endpoint unavailable. Continuing with local/Firebase storage.", e.message);
+                      setApiError(true); // Disable future API calls for this session
+                  });
           }
 
           await DataService.saveModuleFile(moduleType, newFile);
@@ -1293,7 +1297,14 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
                                                       ) : (
                                                           isMedia ? (
                                                               <div className="flex justify-center">
-                                                                {record[col] ? (
+                                                                {isRythuDetails ? (
+                                                                     <PhotoCell 
+                                                                         url={record[col]} 
+                                                                         isEditable={false} 
+                                                                         onUpload={() => {}}
+                                                                         onClick={() => openMediaViewer(record[col])}
+                                                                     />
+                                                                ) : record[col] ? (
                                                                     <button onClick={() => openMediaViewer(record[col], `Column: ${col}`)} className="text-blue-600 hover:underline text-xs flex items-center">
                                                                         <ImageIcon size={14} className="mr-1"/> View
                                                                     </button>

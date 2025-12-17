@@ -33,8 +33,10 @@ export const AdminDashboard: React.FC = () => {
     loadConfig();
   }, [dbType]);
 
-  const loadUsers = () => {
-    setUsers(AuthService.getAllUsers());
+  const loadUsers = async () => {
+    // ASYNC FETCH: Ensures fresh data from DB (Supabase/Firebase)
+    const data = await AuthService.fetchUsers();
+    setUsers(data);
   };
 
   const loadConfig = () => {
@@ -79,8 +81,12 @@ export const AdminDashboard: React.FC = () => {
           setError('');
           setIsAddMode(false);
           setNewName(''); setNewEmail(''); setNewMobile(''); setNewPassword('');
-          loadUsers();
-          setTimeout(() => setSuccess(''), 3000);
+          
+          // Wait slightly for db consistency if needed, then reload
+          setTimeout(() => {
+              loadUsers();
+              setSuccess('');
+          }, 1000);
       } else {
           setError(result.message);
       }
@@ -89,7 +95,7 @@ export const AdminDashboard: React.FC = () => {
   const handleStatusToggle = async (id: string, currentStatus: 'Active' | 'Inactive') => {
       const newStatus = currentStatus === 'Active' ? 'Inactive' : 'Active';
       if(await AuthService.updateUserStatus(id, newStatus)) {
-          loadUsers();
+          await loadUsers();
           setSuccess(`User ${newStatus === 'Active' ? 'Activated' : 'Deactivated'} Successfully`);
           setTimeout(() => setSuccess(''), 3000);
       } else {
@@ -105,7 +111,7 @@ export const AdminDashboard: React.FC = () => {
       }
       if(window.confirm("Are you sure you want to permanently delete this staff member? This action cannot be undone.")) {
           await AuthService.deleteUser(id);
-          loadUsers();
+          await loadUsers();
           setSuccess("Staff member deleted permanently.");
           setTimeout(() => setSuccess(''), 3000);
       }
