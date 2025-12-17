@@ -417,7 +417,7 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
                   documents: [], 
                   is_new: 1,
                   is_uploaded: 1, // Flag for Uploaded View
-                  is_modified: 0 // BULK UPLOAD = WHITE ROW (Not Modified)
+                  is_modified: 0 
               };
               
               columns.forEach((colName, cIdx) => { 
@@ -773,7 +773,6 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
   const initiateDeleteFile = (fileId: string, e: React.MouseEvent) => {
       e.stopPropagation();
       if(!canDelete) { showToast("Permission Denied: Admin Only", "error"); return; }
-      setDeleteModal({ isOpen: true, type: 'file', id: null }); // Fix: Set id explicitly when needed below
       setDeleteModal({ isOpen: true, type: 'file', id: fileId });
   };
 
@@ -787,6 +786,14 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
           const dataToExport = filteredRecords;
           const exportData = dataToExport.map(record => {
             const cleanRecord: Record<string, any> = {};
+            
+            // ADD STATUS COLUMN for "Same Look" requirement
+            let status = 'Existing';
+            if (record.is_new === 1 && record.is_uploaded !== 1) status = 'Newly Added';
+            else if (record.is_modified === 1 || record.is_updated === 1) status = 'Updated / Modified';
+            
+            cleanRecord['Record Status'] = status;
+
             if (isARegister) {
                 if (!record['Total Extent']) {
                     cleanRecord['Total Extent'] = calculateRowTotalExtent(record, currentColumns).toFixed(2);
@@ -796,7 +803,7 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
             }
 
             Object.keys(record).forEach(key => {
-                if (['documents', 'metadata', 'is_new', 'is_updated', 'fileId', 'id', 'imageUrl', 'createdBy', 'createdDate', 'updatedBy', 'updatedDate', 'is_highlighted', 'is_uploaded', 'is_modified'].includes(key)) return;
+                if (['documents', 'metadata', 'is_new', 'is_updated', 'fileId', 'id', 'imageUrl', 'createdBy', 'createdDate', 'updatedBy', 'updatedDate', 'is_highlighted', 'is_uploaded', 'is_modified', '_sourceModule'].includes(key)) return;
                 
                 let value = record[key];
 
@@ -866,7 +873,19 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
             body: tableRows, 
             startY: 20, 
             styles: { fontSize: 7 }, 
-            headStyles: { fillColor: [22, 163, 74] } 
+            headStyles: { fillColor: [22, 163, 74] },
+            didParseCell: (data) => {
+                // Apply "Same Look" background colors to PDF rows
+                const rowIndex = data.row.index;
+                if (rowIndex >= 0 && data.section === 'body') {
+                    const record = dataToExport[rowIndex];
+                    if (record.is_new === 1 && record.is_uploaded !== 1) {
+                        data.cell.styles.fillColor = [255, 230, 240]; // Pink
+                    } else if (record.is_modified === 1 || record.is_updated === 1) {
+                        data.cell.styles.fillColor = [212, 248, 212]; // Green #d4f8d4
+                    }
+                }
+            }
         });
         doc.save(`${title.replace(/\s+/g, '_')}_Report.pdf`);
       } catch (e) {

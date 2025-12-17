@@ -133,9 +133,18 @@ export const RythuDetailsReport: React.FC = () => {
 
     // --- EXPORT FUNCTIONS ---
     const handleExportExcel = () => {
-        const exportData = filteredRecords.map(r => {
-            const { id, fileId, is_new, is_updated, is_highlighted, is_modified, documents, metadata, ...cleanRecord } = r;
-            return cleanRecord;
+        const exportData = filteredRecords.map(record => {
+            const { id, fileId, is_new, is_updated, is_highlighted, is_modified, documents, metadata, ...cleanRecord } = record;
+            
+            // Add Status Column for "Same Look" requirement
+            let status = 'Existing';
+            if (record.is_new === 1 && record.is_uploaded !== 1) status = 'Newly Added';
+            else if (record.is_modified === 1 || record.is_updated === 1) status = 'Updated / Modified';
+            
+            return {
+                'Record Status': status,
+                ...cleanRecord
+            };
         });
         const ws = XLSX.utils.json_to_sheet(exportData);
         const wb = XLSX.utils.book_new();
@@ -149,22 +158,23 @@ export const RythuDetailsReport: React.FC = () => {
         doc.setFontSize(10);
         doc.text(`Generated: ${new Date().toLocaleString()}`, 14, 16);
         doc.text(`Total Records: ${filteredRecords.length}`, 14, 21);
-
-        const tableColumn = ["ID", "Created By", "Date", "Status"]; 
-        // Note: Dynamic columns vary, so picking static/audit fields for PDF + first 3 dynamic keys
         
         // Helper to get first few keys that aren't system keys
         const sampleKeys = filteredRecords.length > 0 
-            ? Object.keys(filteredRecords[0]).filter(k => !['id', 'fileId', 'is_new', 'is_updated', 'is_highlighted', 'is_modified', 'documents', 'imageUrl', 'createdBy', 'createdDate', 'updatedBy', 'updatedDate'].includes(k)).slice(0, 4)
+            ? Object.keys(filteredRecords[0]).filter(k => !['id', 'fileId', 'is_new', 'is_updated', 'is_highlighted', 'is_modified', 'documents', 'imageUrl', 'createdBy', 'createdDate', 'updatedBy', 'updatedDate', '_sourceModule'].includes(k)).slice(0, 4)
             : [];
             
-        const headers = [...sampleKeys, "Created By", "Date"];
+        const headers = ["Status", ...sampleKeys, "Action By", "Date"];
 
         const tableRows = filteredRecords.map(r => {
-            const rowData: any[] = [];
+            let status = 'Existing';
+            if (r.is_new === 1 && r.is_uploaded !== 1) status = 'New';
+            else if (r.is_modified === 1 || r.is_updated === 1) status = 'Updated';
+
+            const rowData: any[] = [status];
             sampleKeys.forEach(k => rowData.push(String(r[k] || '').substring(0, 20)));
             rowData.push(r.createdBy || r.updatedBy || 'N/A');
-            rowData.push(r.createdDate ? new Date(r.createdDate).toLocaleDateString() : 'N/A');
+            rowData.push(r.createdDate ? new Date(r.createdDate).toLocaleDateString() : (r.updatedDate ? new Date(r.updatedDate).toLocaleDateString() : 'N/A'));
             return rowData;
         });
 
@@ -173,7 +183,17 @@ export const RythuDetailsReport: React.FC = () => {
             body: tableRows,
             startY: 25,
             styles: { fontSize: 8 },
-            headStyles: { fillColor: [147, 51, 234] } // Purple theme
+            headStyles: { fillColor: [147, 51, 234] }, // Purple theme
+            didParseCell: (data) => {
+                if (data.section === 'body' && data.row.index >= 0) {
+                    const record = filteredRecords[data.row.index];
+                    if (record.is_new === 1 && record.is_uploaded !== 1) {
+                        data.cell.styles.fillColor = [255, 230, 240]; // Pink
+                    } else if (record.is_modified === 1 || record.is_updated === 1) {
+                        data.cell.styles.fillColor = [212, 248, 212]; // Green #d4f8d4
+                    }
+                }
+            }
         });
         doc.save("Rythu_Details_Report.pdf");
     };
@@ -302,7 +322,7 @@ export const RythuDetailsReport: React.FC = () => {
                                     <th className="p-4 border-b border-gray-200 font-bold">Date</th>
                                     {/* Render dynamic columns (first 5 for preview) */}
                                     {filteredRecords.length > 0 && Object.keys(filteredRecords[0])
-                                        .filter(k => !['id','fileId','is_new','is_updated','documents','imageUrl','createdBy','createdDate','updatedBy','updatedDate','metadata', 'is_highlighted', 'is_modified'].includes(k))
+                                        .filter(k => !['id','fileId','is_new','is_updated','documents','imageUrl','createdBy','createdDate','updatedBy','updatedDate','metadata', 'is_highlighted', 'is_modified', '_sourceModule'].includes(k))
                                         .slice(0, 5)
                                         .map((key, idx) => (
                                             <th key={idx} className="p-4 border-b border-gray-200 font-bold whitespace-nowrap">{key}</th>
@@ -325,12 +345,17 @@ export const RythuDetailsReport: React.FC = () => {
                                         const date = record.createdDate || record.updatedDate;
                                         const displayDate = date ? new Date(date).toLocaleString() : 'N/A';
                                         
-                                        // Row Color Logic for Report: Highlight if flagged
-                                        const rowClass = isModified ? "bg-pink-50 hover:bg-pink-100" : "hover:bg-gray-50";
+                                        // STANDARD: Existing=White, Updated=Green, New=Pink
+                                        let rowClass = "hover:bg-gray-50 bg-white";
+                                        if (isNew && record.is_uploaded !== 1) {
+                                            rowClass = "bg-pink-50 hover:bg-pink-100";
+                                        } else if (isModified || isUpdated) {
+                                            rowClass = "bg-[#d4f8d4] hover:bg-green-100";
+                                        }
 
                                         let statusBadge = <span className="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs">Existing</span>;
-                                        if (isNew) statusBadge = <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-bold">New</span>;
-                                        else if (isUpdated) statusBadge = <span className="px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs font-bold">Updated</span>;
+                                        if (isNew) statusBadge = <span className="px-2 py-1 bg-pink-100 text-pink-700 rounded text-xs font-bold">New</span>;
+                                        else if (isUpdated || isModified) statusBadge = <span className="px-2 py-1 bg-green-100 text-green-700 rounded text-xs font-bold">Updated</span>;
 
                                         return (
                                             <tr key={record.id} className={`${rowClass} transition-colors`}>
@@ -338,7 +363,7 @@ export const RythuDetailsReport: React.FC = () => {
                                                 <td className="p-4 align-middle text-sm font-medium text-gray-800">{user}</td>
                                                 <td className="p-4 align-middle text-sm text-gray-500">{displayDate}</td>
                                                 {Object.keys(record)
-                                                    .filter(k => !['id','fileId','is_new','is_updated','documents','imageUrl','createdBy','createdDate','updatedBy','updatedDate','metadata', 'is_highlighted', 'is_modified'].includes(k))
+                                                    .filter(k => !['id','fileId','is_new','is_updated','documents','imageUrl','createdBy','createdDate','updatedBy','updatedDate','metadata', 'is_highlighted', 'is_modified', '_sourceModule'].includes(k))
                                                     .slice(0, 5)
                                                     .map((key, idx) => (
                                                         <td key={idx} className="p-4 align-middle text-sm text-gray-700 max-w-[200px] truncate">

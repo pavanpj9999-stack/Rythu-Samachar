@@ -30,6 +30,10 @@ interface AuditLog {
     timestamp: string;
     rawDate: Date;
     module: string;
+    is_new?: number;
+    is_updated?: number;
+    is_modified?: number;
+    is_uploaded?: number;
 }
 
 export const Reports6A: React.FC = () => {
@@ -223,7 +227,9 @@ export const Reports6A: React.FC = () => {
                   description: `Created new record in ${moduleName}. ${identifier}`,
                   timestamp: r.createdDate || new Date().toISOString(),
                   rawDate: new Date(r.createdDate || 0),
-                  module: moduleName
+                  module: moduleName,
+                  is_new: r.is_new,
+                  is_uploaded: r.is_uploaded
               });
           }
 
@@ -241,7 +247,9 @@ export const Reports6A: React.FC = () => {
                     : `Updated record details for ${identifier}. ${r.is_modified ? 'Manual Modification' : 'Bulk Update'}`,
                   timestamp: r.updatedDate || new Date().toISOString(),
                   rawDate: new Date(r.updatedDate || 0),
-                  module: moduleName
+                  module: moduleName,
+                  is_updated: r.is_updated,
+                  is_modified: r.is_modified
               });
           }
       });
@@ -653,6 +661,14 @@ export const Reports6A: React.FC = () => {
                                    paginatedLogs.map((log, index) => {
                                        const globalIndex = (currentPage - 1) * itemsPerPage + index + 1;
                                        
+                                       // STANDARD: Existing=White, Updated=Green, New=Pink
+                                       let rowClass = "hover:bg-blue-50/30 bg-white";
+                                       if (log.is_new === 1 && log.is_uploaded !== 1) {
+                                           rowClass = "bg-pink-50 hover:bg-pink-100"; 
+                                       } else if (log.is_modified === 1 || log.is_updated === 1) {
+                                           rowClass = "bg-[#d4f8d4] hover:bg-green-100";
+                                       }
+
                                        // Badge Colors
                                        let badgeClass = "bg-gray-100 text-gray-600";
                                        if (log.action === 'New Entry') badgeClass = "bg-green-100 text-green-700";
@@ -660,7 +676,7 @@ export const Reports6A: React.FC = () => {
                                        else if (log.action === 'Photo Upload') badgeClass = "bg-purple-100 text-purple-700";
 
                                        return (
-                                           <tr key={log.id} className="hover:bg-blue-50/30 transition-colors">
+                                           <tr key={log.id} className={`${rowClass} transition-colors`}>
                                                <td className="p-4 text-sm font-bold text-gray-500">{globalIndex}</td>
                                                <td className="p-4">
                                                    <span className={`px-2 py-1 rounded-md text-xs font-bold uppercase tracking-wider ${badgeClass}`}>
