@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS attendance (
   id TEXT PRIMARY KEY,
   user_id TEXT,
   user_name TEXT,
-  date DATE,
+  date TEXT, -- Stored as YYYY-MM-DD string
   timestamp TIMESTAMP WITH TIME ZONE,
   latitude FLOAT,
   longitude FLOAT,
@@ -102,19 +102,31 @@ CREATE TABLE IF NOT EXISTS kml (
   longitude FLOAT
 );
 
--- 7. Enable Row Level Security (Optional but recommended)
+-- 7. Recycle Bin Table
+CREATE TABLE IF NOT EXISTS recycle_bin (
+  id TEXT PRIMARY KEY,
+  source_module TEXT,
+  deleted_by TEXT,
+  deleted_at TIMESTAMP WITH TIME ZONE,
+  data JSONB,
+  original_file_id TEXT
+);
+
+-- 8. Enable Row Level Security (Optional but recommended)
 ALTER TABLE users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE files ENABLE ROW LEVEL SECURITY;
 ALTER TABLE records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE attendance ENABLE ROW LEVEL SECURITY;
 ALTER TABLE fmb ENABLE ROW LEVEL SECURITY;
 ALTER TABLE kml ENABLE ROW LEVEL SECURITY;
+ALTER TABLE recycle_bin ENABLE ROW LEVEL SECURITY;
 
--- 8. Policies (Public Access for simplicity in this demo, restrict in production)
+-- 9. Policies (Public Access for simplicity in this demo, restrict in production)
 CREATE POLICY "Public Access" ON users FOR ALL USING (true);
 CREATE POLICY "Public Access" ON files FOR ALL USING (true);
 CREATE POLICY "Public Access" ON records FOR ALL USING (true);
 CREATE POLICY "Public Access" ON attendance FOR ALL USING (true);
 CREATE POLICY "Public Access" ON fmb FOR ALL USING (true);
 CREATE POLICY "Public Access" ON kml FOR ALL USING (true);
+CREATE POLICY "Public Access" ON recycle_bin FOR ALL USING (true);
 `;

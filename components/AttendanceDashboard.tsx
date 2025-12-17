@@ -1,11 +1,8 @@
-
 import React, { useState, useEffect } from 'react';
 import { DataService } from '../services/mockDataService';
 import { AttendanceRecord, UserRole } from '../types';
-import { FileText, MapPin, UserCheck, Calendar, Filter, Smartphone, Map as MapIcon, X, CheckCircle, ShieldAlert } from 'lucide-react';
+import { FileText, MapPin, UserCheck, Calendar, Filter, Smartphone, Map as MapIcon, X, CheckCircle, ShieldAlert, Search } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import jsPDF from 'jspdf';
-import autoTable from 'jspdf-autotable';
 
 export const AttendanceDashboard: React.FC = () => {
     const [records, setRecords] = useState<AttendanceRecord[]>([]);
@@ -14,8 +11,12 @@ export const AttendanceDashboard: React.FC = () => {
     const [selectedSelfie, setSelectedSelfie] = useState<string | null>(null);
     const [selectedMap, setSelectedMap] = useState<AttendanceRecord | null>(null);
 
-    // Filters
-    const [dateFilter, setDateFilter] = useState(new Date().toISOString().split('T')[0]);
+    // Filters - Use local date string to match Auth.tsx capture
+    const [dateFilter, setDateFilter] = useState(() => {
+        const now = new Date();
+        const offset = now.getTimezoneOffset() * 60000;
+        return new Date(now.getTime() - offset).toISOString().split('T')[0];
+    });
     const [staffFilter, setStaffFilter] = useState('');
 
     const getCurrentUser = () => {
@@ -46,7 +47,8 @@ export const AttendanceDashboard: React.FC = () => {
             result = result.filter(r => r.date === dateFilter);
         }
         if (staffFilter) {
-            result = result.filter(r => r.userName.toLowerCase().includes(staffFilter.toLowerCase()));
+            // Added null check for userName
+            result = result.filter(r => (r.userName || '').toLowerCase().includes(staffFilter.toLowerCase()));
         }
         setFilteredRecords(result);
     };
@@ -54,7 +56,7 @@ export const AttendanceDashboard: React.FC = () => {
     const handleExportExcel = () => {
         const dataToExport = filteredRecords.map((r, i) => ({
             "S.No": i + 1,
-            "Staff Name": r.userName,
+            "Staff Name": r.userName || 'Unknown',
             "Date": r.date,
             "Time": new Date(r.timestamp).toLocaleTimeString(),
             "Latitude": r.latitude,
@@ -102,7 +104,10 @@ export const AttendanceDashboard: React.FC = () => {
                  </div>
                  <div className="flex-1">
                      <label className="text-xs font-bold text-gray-500 uppercase">Search Staff</label>
-                     <input type="text" placeholder="Enter Name..." value={staffFilter} onChange={e => setStaffFilter(e.target.value)} className="w-full px-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 outline-none" />
+                     <div className="relative">
+                        <Search className="absolute left-3 top-2.5 text-gray-400" size={16} />
+                        <input type="text" placeholder="Enter Name..." value={staffFilter} onChange={e => setStaffFilter(e.target.value)} className="w-full pl-10 pr-4 py-2 border rounded-lg focus:ring-2 focus:ring-green-500 outline-none" />
+                     </div>
                  </div>
              </div>
 
@@ -124,7 +129,7 @@ export const AttendanceDashboard: React.FC = () => {
                              {filteredRecords.length > 0 ? filteredRecords.map(record => (
                                  <tr key={record.id} className="hover:bg-gray-50 transition-colors">
                                      <td className="px-6 py-4">
-                                         <div className="font-bold text-gray-900">{record.userName}</div>
+                                         <div className="font-bold text-gray-900">{record.userName || 'Unknown User'}</div>
                                          <div className="text-xs text-gray-500">ID: {record.userId}</div>
                                      </td>
                                      <td className="px-6 py-4">
@@ -132,12 +137,16 @@ export const AttendanceDashboard: React.FC = () => {
                                          <div className="text-xs text-gray-500">{record.date}</div>
                                      </td>
                                      <td className="px-6 py-4">
-                                         <img 
-                                            src={record.selfieUrl} 
-                                            alt="Selfie" 
-                                            className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-md cursor-pointer hover:scale-110 transition-transform"
-                                            onClick={() => setSelectedSelfie(record.selfieUrl)}
-                                         />
+                                         {record.selfieUrl ? (
+                                             <img 
+                                                src={record.selfieUrl} 
+                                                alt="Selfie" 
+                                                className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-md cursor-pointer hover:scale-110 transition-transform"
+                                                onClick={() => setSelectedSelfie(record.selfieUrl)}
+                                             />
+                                         ) : (
+                                             <div className="w-12 h-12 rounded-full bg-gray-200 flex items-center justify-center text-xs text-gray-500">No Img</div>
+                                         )}
                                      </td>
                                      <td className="px-6 py-4">
                                          <button 

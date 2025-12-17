@@ -405,10 +405,14 @@ export const AdangalComparison: React.FC = () => {
                         <tbody className="bg-white">
                             {paginatedRecords.length > 0 ? paginatedRecords.map((record, localRowIndex) => {
                                 const globalRowIndex = globalRowOffset + localRowIndex;
-                                const isHighlighted = record.is_new === 1 || record.is_updated === 1;
-                                const rowClass = isHighlighted 
-                                    ? "bg-[#d4f8d4] hover:bg-green-100" 
-                                    : "hover:bg-blue-50/10";
+                                // STANDARD: Existing/Bulk=White, Updated=Green, New=Pink
+                                let rowClass = "hover:bg-blue-50/10 bg-white";
+                                if (record.is_new === 1 && record.is_uploaded !== 1) {
+                                    rowClass = "bg-pink-50 hover:bg-pink-100";
+                                } else if (record.is_updated === 1) {
+                                    rowClass = "bg-[#d4f8d4] hover:bg-green-100";
+                                }
+
                                 return (
                                     <tr key={record.id} className={rowClass}>
                                         {currentColumns.map((colKey, colIndex) => {

@@ -730,6 +730,7 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
   const handleDirectMediaUpload = async (recordId: string, colKey: string | null, e: React.ChangeEvent<HTMLInputElement>) => {
       const file = e.target.files?.[0];
       if (file) {
+          // Initialize FileReader to fix "Cannot find name 'reader'" error
           const reader = new FileReader();
           reader.onload = async (evt) => {
               const base64 = evt.target?.result as string;
@@ -772,6 +773,7 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
   const initiateDeleteFile = (fileId: string, e: React.MouseEvent) => {
       e.stopPropagation();
       if(!canDelete) { showToast("Permission Denied: Admin Only", "error"); return; }
+      setDeleteModal({ isOpen: true, type: 'file', id: null }); // Fix: Set id explicitly when needed below
       setDeleteModal({ isOpen: true, type: 'file', id: fileId });
   };
 
@@ -1122,7 +1124,7 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
           </div>
       )}
 
-      {/* RENDER TABLE VIEW (unchanged essentially, just uses records state which is now reactive) */}
+      {/* RENDER TABLE VIEW */}
       {viewMode === 'file' && (
         <div className={isFullScreen ? "fixed inset-0 z-[100] bg-white flex flex-col animate-in fade-in zoom-in-95" : "flex flex-col h-[calc(100vh-8rem)] animate-in fade-in slide-in-from-right-4"}>
           {toast.show && (<div className={`fixed top-24 right-5 z-[110] px-6 py-4 rounded-lg shadow-2xl flex items-center gap-3 animate-in slide-in-from-right duration-300 ${toast.type === 'success' ? 'bg-corp-900 text-white' : 'bg-red-600 text-white'}`}>{toast.type === 'success' ? <CheckCircle size={20} /> : <AlertTriangle size={20} />}<span className="font-bold">{toast.message}</span></div>)}
@@ -1237,9 +1239,14 @@ export const UniversalDataModule: React.FC<UniversalDataModuleProps> = ({ module
                                   {paginatedRecords.length > 0 ? paginatedRecords.map((record, index) => {
                                       const isSpecialModule = ['DATA_6A', 'RYTHU_DETAILS'].includes(moduleType);
                                       // Row Background Logic
-                                      let rowClass = "hover:bg-blue-50/30";
-                                      if (record.is_new) rowClass = "bg-[#d4f8d4] hover:bg-green-100";
-                                      else if (record.is_modified || record.is_updated) rowClass = "bg-pink-50 hover:bg-pink-100"; // Pink if updated
+                                      // STANDARD: Existing=White, Updated=Green, New=Pink
+                                      let rowClass = "hover:bg-blue-50/30 bg-white";
+                                      
+                                      if (record.is_new === 1 && record.is_uploaded !== 1) {
+                                          rowClass = "bg-pink-50 hover:bg-pink-100"; // Manual New -> Pink
+                                      } else if (record.is_modified === 1 || record.is_updated === 1) {
+                                          rowClass = "bg-[#d4f8d4] hover:bg-green-100"; // Updated -> Green
+                                      }
                                       
                                       const isEditing = editingId === record.id;
                                       if (isEditing) rowClass = "bg-yellow-50";

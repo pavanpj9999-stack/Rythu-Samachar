@@ -333,7 +333,7 @@ export const ExtentReport: React.FC = () => {
                           <tr><td colSpan={6} className="px-6 py-10 text-center text-gray-400">Loading data...</td></tr>
                       ) : filteredData.length > 0 ? (
                           filteredData.map((r: any, idx) => (
-                              <tr key={idx} className="bg-[#d4f8d4] hover:bg-green-200 transition-colors">
+                              <tr key={idx} className="bg-white hover:bg-green-50 transition-colors">
                                   <td className="px-6 py-3 text-sm font-bold text-gray-700">{idx + 1}</td>
                                   <td className="px-6 py-3 text-sm font-medium text-blue-800">{r.teamName}</td>
                                   

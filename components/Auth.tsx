@@ -90,12 +90,17 @@ export const Auth: React.FC<AuthProps> = ({ onLogin }) => {
           console.warn("Location capture failed, proceeding without it.");
       }
 
+      // Use Local Date for consistency with Dashboard filters
+      const now = new Date();
+      const offset = now.getTimezoneOffset() * 60000;
+      const localDate = new Date(now.getTime() - offset).toISOString().split('T')[0];
+
       const record: AttendanceRecord = {
           id: `att_${Date.now()}`,
           userId: tempUser.id,
           userName: tempUser.name,
-          date: new Date().toISOString().split('T')[0],
-          timestamp: new Date().toISOString(), // Exact Login Time
+          date: localDate, // YYYY-MM-DD (Local)
+          timestamp: new Date().toISOString(), // Exact Login Time (UTC)
           selfieUrl: selfieFile,
           latitude: locationData.lat,
           longitude: locationData.lng,
